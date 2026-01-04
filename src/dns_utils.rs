@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 const TEST_DOMAIN: &str = "www.google.com";
 const DOWNLOAD_TEST_URL: &str = "https://speed.cloudflare.com/__down?bytes=1000000"; // 1MB file
-const DOWNLOAD_TIMEOUT_SECS: u64 = 30;
+const DOWNLOAD_TIMEOUT_SECS: u64 = 7; // Slightly less than 7.5 to be safe
 
 type TokioResolver = Resolver<TokioConnectionProvider>;
 
@@ -21,8 +21,8 @@ fn create_resolver(dns_ip: IpAddr) -> TokioResolver {
     config.add_name_server(name_server);
 
     let mut opts = ResolverOpts::default();
-    opts.timeout = Duration::from_secs(5);
-    opts.attempts = 2;
+    opts.timeout = Duration::from_secs(2); // Reduced to wait less for slow DNS
+    opts.attempts = 1;
 
     Resolver::builder_with_config(config, TokioConnectionProvider::default())
         .with_options(opts)
@@ -107,25 +107,36 @@ impl DnsTestResult {
 }
 
 /// Run a full test (latency + download speed) for a given DNS server.
+/// Enforces a hard 7.5-second limit for the entire process.
 pub async fn run_full_test(dns_ip: IpAddr) -> DnsTestResult {
     let mut result = DnsTestResult::new(dns_ip);
 
-    // Test latency
-    match test_latency(dns_ip).await {
-        Ok(latency) => result.latency = Some(latency),
-        Err(e) => {
-            result.error = Some(format!("Latency test failed: {}", e));
-            return result;
+    let test_future = async {
+        // Test latency
+        match test_latency(dns_ip).await {
+            Ok(latency) => result.latency = Some(latency),
+            Err(e) => {
+                result.error = Some(format!("Latency test failed: {}", e));
+                return result;
+            }
+        }
+
+        // Test download speed
+        match test_download_speed(dns_ip).await {
+            Ok(speed) => result.download_speed_mbps = Some(speed),
+            Err(e) => {
+                result.error = Some(format!("Download test failed: {}", e));
+            }
+        }
+        result
+    };
+
+    match tokio::time::timeout(Duration::from_millis(7500), test_future).await {
+        Ok(res) => res,
+        Err(_) => {
+            let mut timeout_result = DnsTestResult::new(dns_ip);
+            timeout_result.error = Some("Test timed out (exceeded 7.5s)".to_string());
+            timeout_result
         }
     }
-
-    // Test download speed
-    match test_download_speed(dns_ip).await {
-        Ok(speed) => result.download_speed_mbps = Some(speed),
-        Err(e) => {
-            result.error = Some(format!("Download test failed: {}", e));
-        }
-    }
-
-    result
 }

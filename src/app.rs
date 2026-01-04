@@ -21,6 +21,8 @@ pub struct App {
     pub dns_servers: Vec<IpAddr>,
     pub input: Input,
     pub results: Vec<DnsTestResult>,
+    pub last_result: Option<DnsTestResult>,
+    pub best_result: Option<DnsTestResult>,
     pub testing_index: usize,
     pub sort_column: SortColumn,
     pub sort_ascending: bool,
@@ -35,6 +37,8 @@ impl Default for App {
             dns_servers: Vec::new(),
             input: Input::default(),
             results: Vec::new(),
+            last_result: None,
+            best_result: None,
             testing_index: 0,
             sort_column: SortColumn::DownloadSpeed,
             sort_ascending: false, // Descending by default (fastest first)
@@ -45,8 +49,10 @@ impl Default for App {
 }
 
 impl App {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(initial_dns: Vec<IpAddr>) -> Self {
+        let mut app = Self::default();
+        app.dns_servers = initial_dns;
+        app
     }
 
     /// Add a DNS server to the list
@@ -86,6 +92,31 @@ impl App {
 
     /// Record a test result and advance to the next server
     pub fn record_result(&mut self, result: DnsTestResult) {
+        self.last_result = Some(result.clone());
+
+        // Update best result (higher speed is better, then lower latency)
+        if let Some(best) = &self.best_result {
+            let is_better = match (result.download_speed_mbps, best.download_speed_mbps) {
+                (Some(s1), Some(s2)) if (s1 - s2).abs() > 0.01 => s1 > s2,
+                (Some(_), None) => true,
+                (None, Some(_)) => false,
+                _ => {
+                    // Speeds are similar or both None, compare latency
+                    match (result.latency, best.latency) {
+                        (Some(l1), Some(l2)) => l1 < l2,
+                        (Some(_), None) => true,
+                        (None, Some(_)) => false,
+                        _ => false,
+                    }
+                }
+            };
+            if is_better {
+                self.best_result = Some(result.clone());
+            }
+        } else if result.error.is_none() && (result.latency.is_some() || result.download_speed_mbps.is_some()) {
+            self.best_result = Some(result.clone());
+        }
+
         self.results.push(result);
         self.testing_index += 1;
 
@@ -148,6 +179,8 @@ impl App {
     pub fn reset(&mut self) {
         self.state = AppState::Input;
         self.results.clear();
+        self.last_result = None;
+        self.best_result = None;
         self.testing_index = 0;
     }
 

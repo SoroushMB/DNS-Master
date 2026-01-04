@@ -5,9 +5,13 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
+clap = { version = "4.5.54", features = ["derive"] }
 crossterm = "0.29.0"
+csv = "1.4.0"
 hickory-resolver = "0.25.2"
 ratatui = "0.30.0"
 reqwest = "0.13.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.148"
 tokio = { version = "1.49.0", features = ["full"] }
 tui-input = "0.15.0"

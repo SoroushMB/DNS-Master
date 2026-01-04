@@ -2,7 +2,8 @@ use crate::app::{App, AppState, SortColumn};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Cell, Gauge, List, ListItem, Paragraph, Row, Table},
+    text::{Line, Span},
+    widgets::{BarChart, Block, Borders, Cell, Gauge, List, ListItem, Paragraph, Row, Table},
     Frame,
 };
 
@@ -88,12 +89,13 @@ fn render_input_state(frame: &mut Frame, app: &App) {
 fn render_testing_state(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(2)
+        .margin(1)
         .constraints([
             Constraint::Length(3), // Title
             Constraint::Length(3), // Progress bar
-            Constraint::Min(5),    // Status
-            Constraint::Length(2), // Help
+            Constraint::Length(9), // Status (Last & Top)
+            Constraint::Min(10),   // Comparison Graph
+            Constraint::Length(1), // Help
         ])
         .split(frame.area());
 
@@ -104,42 +106,164 @@ fn render_testing_state(frame: &mut Frame, app: &App) {
     frame.render_widget(title, chunks[0]);
 
     // Progress bar
-    let progress = if app.dns_servers.is_empty() {
+    let progress_ratio = if app.dns_servers.is_empty() {
         0.0
     } else {
         app.testing_index as f64 / app.dns_servers.len() as f64
     };
 
+    let label_color = if progress_ratio >= 0.5 {
+        Color::Black
+    } else {
+        Color::White
+    };
+
     let gauge = Gauge::default()
         .block(Block::default().title("Progress").borders(Borders::ALL))
         .gauge_style(Style::default().fg(Color::Green))
-        .percent((progress * 100.0) as u16)
-        .label(format!(
-            "{}/{}",
-            app.testing_index,
-            app.dns_servers.len()
-        ));
+        .percent((progress_ratio * 100.0) as u16)
+        .label(
+            Span::styled(
+                format!("{}/{}", app.testing_index, app.dns_servers.len()),
+                Style::default().fg(label_color).add_modifier(Modifier::BOLD),
+            )
+        );
     frame.render_widget(gauge, chunks[1]);
 
-    // Current test status
+    // Current test status and Result summaries
     let current_dns = app
         .get_current_test_target()
         .map(|ip| ip.to_string())
         .unwrap_or_else(|| "Finishing...".to_string());
 
-    let status = Paragraph::new(format!("Testing: {}", current_dns))
-        .style(Style::default().fg(Color::Yellow))
-        .block(
-            Block::default()
-                .title("Current Test")
-                .borders(Borders::ALL),
-        );
-    frame.render_widget(status, chunks[2]);
+    let testing_block = Paragraph::new(Line::from(vec![
+        Span::raw("Testing: "),
+        Span::styled(current_dns, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+    ]))
+    .block(Block::default().title("Current Server").borders(Borders::ALL));
+    
+    // Split the status area for Last Result and Top Result
+    let status_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(50),
+            Constraint::Percentage(50),
+        ])
+        .split(chunks[2]);
+
+    // Sub-layout for Current Server + Last Result in left pane
+    let left_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(5),
+        ])
+        .split(status_chunks[0]);
+
+    frame.render_widget(testing_block, left_chunks[0]);
+
+    // Last Result
+    let last_content = if let Some(last) = &app.last_result {
+        let latency_str = last.latency
+            .map(|d| format!("{:.2}ms", d.as_secs_f64() * 1000.0))
+            .unwrap_or_else(|| "-".to_string());
+        
+        let speed_str = last.download_speed_mbps
+            .map(|s| format!("{:.2} Mbps", s))
+            .unwrap_or_else(|| "-".to_string());
+
+        let mut lines = vec![
+            Line::from(vec![
+                Span::styled("IP: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(last.ip.to_string(), Style::default().fg(Color::Cyan)),
+            ]),
+            Line::from(vec![
+                Span::styled("Latency: ", Style::default().fg(Color::DarkGray)),
+                Span::raw(latency_str),
+            ]),
+            Line::from(vec![
+                Span::styled("Download: ", Style::default().fg(Color::DarkGray)),
+                Span::raw(speed_str),
+            ]),
+        ];
+
+        if let Some(err) = &last.error {
+            lines.push(Line::from(vec![
+                Span::styled("Status: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(err, Style::default().fg(Color::Red)),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled("Status: ", Style::default().fg(Color::DarkGray)),
+                Span::styled("OK", Style::default().fg(Color::Green)),
+            ]));
+        }
+        lines
+    } else {
+        vec![Line::from("No tests completed yet.")]
+    };
+
+    let last_para = Paragraph::new(last_content)
+        .block(Block::default().title("Last Result").borders(Borders::ALL));
+    frame.render_widget(last_para, left_chunks[1]);
+
+    // Top Result
+    let top_content = if let Some(top) = &app.best_result {
+        let latency_str = top.latency
+            .map(|d| format!("{:.2}ms", d.as_secs_f64() * 1000.0))
+            .unwrap_or_else(|| "-".to_string());
+        
+        let speed_str = top.download_speed_mbps
+            .map(|s| format!("{:.2} Mbps", s))
+            .unwrap_or_else(|| "-".to_string());
+
+        vec![
+            Line::from(vec![
+                Span::styled("IP: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(top.ip.to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from(vec![
+                Span::styled("Latency: ", Style::default().fg(Color::DarkGray)),
+                Span::raw(latency_str),
+            ]),
+            Line::from(vec![
+                Span::styled("Download: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(speed_str, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled("🏆 FASTEST 🏆", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+        ]
+    } else {
+        vec![Line::from("Awaiting best result...")]
+    };
+
+    let top_para = Paragraph::new(top_content)
+        .block(Block::default().title("Top Result").borders(Borders::ALL).border_style(Style::default().fg(Color::Yellow)));
+    frame.render_widget(top_para, status_chunks[1]);
+
+    // Comparison Chart
+    let chart_data: Vec<(&str, u64)> = app.results.iter()
+        .map(|r| {
+            let label = Box::leak(r.ip.to_string().into_boxed_str());
+            let val = r.download_speed_mbps.unwrap_or(0.0) as u64;
+            (label as &str, val)
+        })
+        .collect();
+
+    let chart = BarChart::default()
+        .block(Block::default().title("Download Speed Comparison (Mbps)").borders(Borders::ALL))
+        .data(&chart_data)
+        .bar_width(12)
+        .bar_gap(2)
+        .bar_style(Style::default().fg(Color::Green))
+        .value_style(Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD));
+
+    frame.render_widget(chart, chunks[3]);
 
     // Help
     let help = Paragraph::new("Please wait... (q: Quit)")
         .style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(help, chunks[3]);
+    frame.render_widget(help, chunks[4]);
 }
 
 fn render_results_state(frame: &mut Frame, app: &App) {
