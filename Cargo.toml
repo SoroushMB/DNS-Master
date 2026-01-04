@@ -1,0 +1,13 @@
+[package]
+name = "DNS"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+crossterm = "0.29.0"
+hickory-resolver = "0.25.2"
+ratatui = "0.30.0"
+reqwest = "0.13.1"
+tokio = { version = "1.49.0", features = ["full"] }
+tui-input = "0.15.0"
