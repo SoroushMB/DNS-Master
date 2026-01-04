@@ -20,8 +20,8 @@ A cross-platform Terminal User Interface (TUI) tool to benchmark DNS servers for
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/dns-speed-tester.git
-cd dns-speed-tester
+git clone https://github.com/SoroushMB/DNS-Master.git
+cd DNS-Master
 
 # Build release binary
 cargo build --release
@@ -32,7 +32,7 @@ cargo build --release
 
 ### Prerequisites
 
-- 🦀 Rust 1.70 or higher
+- 🦀 Rust 1.88 or higher
 - 📡 Internet connection for speed tests
 
 ## 🚀 Quick Start
@@ -99,8 +99,15 @@ After completion, view the results in a sortable table. Press `s` to cycle sorti
 | `Tab`         | ▶️ Start testing                |
 | `s`           | 🔄 Cycle sort column            |
 | `d`           | ↕️ Toggle sort direction        |
+| `a`           | 🛠️ Apply fastest DNS to system |
 | `r`           | 🔁 Run new test                 |
 | `q`           | 🚪 Quit                         |
+
+> [!IMPORTANT]
+> Applying the fastest DNS (`a`) requires elevated privileges:
+> - **Linux**: `sudo` (supports NetworkManager and systemd-resolved).
+> - **macOS**: `sudo` (uses `networksetup`).
+> - **Windows**: **Run as Administrator** (uses `netsh` via PowerShell).
 
 ## 🛠️ How It Works
 

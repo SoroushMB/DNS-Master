@@ -28,6 +28,7 @@ pub struct App {
     pub sort_ascending: bool,
     pub should_quit: bool,
     pub error_message: Option<String>,
+    pub status_message: Option<(String, bool)>, // (message, is_error)
 }
 
 impl Default for App {
@@ -44,6 +45,7 @@ impl Default for App {
             sort_ascending: false, // Descending by default (fastest first)
             should_quit: false,
             error_message: None,
+            status_message: None,
         }
     }
 }
@@ -182,6 +184,23 @@ impl App {
         self.last_result = None;
         self.best_result = None;
         self.testing_index = 0;
+        self.status_message = None;
+    }
+
+    /// Apply the fastest DNS to the system
+    pub fn apply_fastest_dns(&mut self) {
+        if let Some(best) = &self.best_result {
+            match crate::sys_dns::set_system_dns(best.ip) {
+                Ok(_) => {
+                    self.status_message = Some((format!("Successfully set system DNS to {}", best.ip), false));
+                }
+                Err(e) => {
+                    self.status_message = Some((format!("Failed to set system DNS: {}", e), true));
+                }
+            }
+        } else {
+            self.status_message = Some(("No valid test results available.".to_string(), true));
+        }
     }
 
     /// Run a single test (async)

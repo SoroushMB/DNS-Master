@@ -345,9 +345,26 @@ fn render_results_state(frame: &mut Frame, app: &App) {
 
     frame.render_widget(table, chunks[1]);
 
-    // Help
-    let help = Paragraph::new("s: Cycle sort column | d: Toggle direction | r: New test | q: Quit")
-        .style(Style::default().fg(Color::DarkGray));
+    // Help & Status
+    let help_text = if let Some((msg, is_error)) = &app.status_message {
+        let prefix = if *is_error { "Error: " } else { "Success: " };
+        format!("{}{}", prefix, msg)
+    } else {
+        "s: Sort | d: Dir | r: New test | a: Apply Fastest | q: Quit".to_string()
+    };
+    
+    let help_style = if let Some((_, is_error)) = &app.status_message {
+        if *is_error {
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+        }
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let help = Paragraph::new(help_text)
+        .style(help_style);
     frame.render_widget(help, chunks[2]);
 }
 

@@ -2,6 +2,7 @@ mod app;
 mod dns_utils;
 mod ui;
 mod file_loader;
+mod sys_dns;
 
 use anyhow::{Result, Context};
 use app::{App, AppState};
@@ -155,6 +156,9 @@ async fn run_app(
                     }
                     KeyCode::Char('r') => {
                         app.reset();
+                    }
+                    KeyCode::Char('a') => {
+                        app.apply_fastest_dns();
                     }
                     _ => {}
                 },
