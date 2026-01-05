@@ -184,7 +184,11 @@ async fn run_app(
                             app.toggle_mode();
                         }
                         KeyCode::Backspace => {
-                            app.remove_last_dns_server();
+                            if app.input.value().is_empty() {
+                                app.remove_last_dns_server();
+                            } else {
+                                app.input.handle_event(&Event::Key(key));
+                            }
                         }
                         _ => {
                             app.input.handle_event(&Event::Key(key));
