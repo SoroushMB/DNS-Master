@@ -1,200 +1,125 @@
-# 🌐 DNS Speed Tester
+# 🌐 DNS & Mirror Master (Rust TUI)
 
-A cross-platform Terminal User Interface (TUI) tool to benchmark DNS servers for **latency** and **download speed**.
+A high-performance, cross-platform Terminal User Interface (TUI) tool for benchmarking DNS servers and Linux mirrors. Designed for power users who want speed, aesthetics, and reliability.
 
-![Rust](https://img.shields.io/badge/Rust-1.70+-orange?logo=rust)
+![Rust](https://img.shields.io/badge/Rust-1.88+-orange?logo=rust)
 ![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
+---
+
 ## ✨ Features
 
-- 🚀 **Latency Testing** - Measures DNS resolution time
-- 📥 **Download Speed Testing** - Tests CDN routing quality via each DNS
-- 📊 **Sortable Results** - Sort by IP, latency, or download speed
-- 🎨 **Beautiful TUI** - Built with [Ratatui](https://ratatui.rs/)
-- 🔄 **Cross-Platform** - Works on Linux, macOS, and Windows
+### 🌐 DNS Speed Tester
+- ⚡ **Latency Testing**: Measures DNS resolution time with high precision.
+- 📥 **Download Benchmarking**: Checks CDN routing quality by testing real-world throughput.
+- 🛡️ **Anti-Sanction Support**: Pre-loaded with Iranian anti-sanction DNS (Shecan, 403, Radar, etc.).
+- 📊 **Real-time Graph**: Visualizes performance comparisons with a dynamic BarChart.
+
+### 🪞 Mirror Master
+- 🔍 **Auto-Distro Detection**: Automatically identifies your Linux distribution (Arch, Ubuntu, Debian, Kali, etc.).
+- 📦 **Mirror Benchmarking**: Loads relevant package and tool mirrors (Docker, Android SDK) based on your OS.
+- 🇮🇷 **Local Mirror Focus**: Specialized support for Iranian mirrors like Kubar, ArvanCloud, and Academic IDCs.
+
+### 🎨 Premium TUI Experience
+- 🎡 **Fluid Animations**: Smooth spinners and breathing pulsing effects for a modern feel.
+- 🏎️ **Non-blocking Engine**: Benchmarks run in a background worker, ensuring the UI and animations stay responsive 100% of the time.
+- ✨ **Visual feedback**: Vibrant emojis tailored to your OS distro and test status.
+
+---
 
 ## 📦 Installation
 
-### From Source
+### Prerequisites
+- 🦀 **Rust 1.88** or higher.
+- 📡 **Internet Connection** (required for benchmarks).
 
+### Build from Source
 ```bash
-# Clone the repository
+# Clone and enter the repo
 git clone https://github.com/SoroushMB/DNS-Master.git
 cd DNS-Master
 
-# Build release binary
+# Build for release
 cargo build --release
 
-# Run it
+# Run the app
 ./target/release/DNS
 ```
 
-### Prerequisites
+---
 
-- 🦀 Rust 1.88 or higher
-- 📡 Internet connection for speed tests
+## 🚀 Usage Guide
 
-## 🚀 Quick Start
+### 1. 🌐 DNS Mode (Default)
+Add DNS server IPs manually or load them via CLI. 
+- **Type an IP** and press `Enter` to add it.
+- **Press Tab** to start the test.
+- **Watch the Graph**: See real-time download speed comparisons.
+- **Apply Best**: Once finished, press `a` to apply the fastest DNS to your system (requires sudo/Admin).
 
+### 2. 🪞 Mirror Master Mode
+- **Toggle Mode**: Press `m` in the Input or Results screen to switch to Mirror mode.
+- **Auto-Load**: The app automatically detects your distro and loads relevant mirrors from `examples/mirrors.csv`.
+- **Benchmark**: Press `Tab` to test download speeds for each mirror. Useful for picking the fastest source for `apt`, `pacman`, or `docker`.
+
+### 3. CLI Arguments
+You can pre-load servers via command line:
 ```bash
-# Run the application
-cargo run --release
+# Comma-separated list
+cargo run --release -- -d 8.8.8.8,1.1.1.1
 
-# Run with initial DNS servers
-cargo run --release -- -d 8.8.8.8,1.1.1.1,9.9.9.9
-
-# Load DNS servers from a JSON file
-cargo run --release -- --json examples/dns.json
-
-# Load DNS servers from a CSV file
-cargo run --release -- --csv examples/dns.csv
+# From CSV/JSON files
+cargo run --release -- --csv examples/dns.csv --json custom_list.json
 ```
 
 ---
-
-## 🛠️ CLI Options
-
-| Argument | Description | Example |
-|----------|-------------|---------|
-| `-d`, `--dns` | Comma-separated list of DNS IPs | `-d 8.8.8.8,1.1.1.1` |
-| `--json` | Path to JSON file `[{"ip": "..."}]` | `--json servers.json` |
-| `--csv` | Path to CSV file (header `ip` required) | `--csv servers.csv` |
-
-## 📖 Usage
-
-### 1️⃣ Add DNS Servers
-
-Type an IP address and press **Enter** to add it to the list. You can also load them via CLI arguments (see [CLI Options](#️-cli-options)).
-
-```
-8.8.8.8        # Google DNS
-1.1.1.1        # Cloudflare DNS
-```
-
-### 2️⃣ Start Testing
-
-Press **Tab** to begin the benchmark. The tool will iterate through your list:
-1. 📍 **Latency**: Resolves `www.google.com`
-2. 📥 **Download Speed**: Benchmarks a 1MB transfer from Cloudflare CDN
-3. ⏱️ **Strict Timeout**: Each test is strictly limited to **7.5 seconds** to ensure slow servers don't hang the process.
-
-### 3️⃣ Real-time Monitoring
-
-While testing, the TUI shows:
-- 📊 **Progress Bar**: Turns black-on-green after 50% completion for high visibility.
-- 🔄 **Current Status**: Shows the IP currently being tested.
-- ✅ **Last Result**: Displays the latency and speed of the immediate predecessor test in real-time.
-
-### 4️⃣ View Results
-
-After completion, view the results in a sortable table. Press `s` to cycle sorting (IP, Latency, Speed) and `d` to toggle direction.
 
 ## ⌨️ Keyboard Controls
 
-| Key           | Action                          |
-|---------------|---------------------------------|
-| `Enter`       | ➕ Add DNS IP address           |
-| `Backspace`   | ❌ Remove character/last DNS   |
-| `Tab`         | ▶️ Start testing                |
-| `s`           | 🔄 Cycle sort column            |
-| `d`           | ↕️ Toggle sort direction        |
-| `a`           | 🛠️ Apply fastest DNS to system |
-| `r`           | 🔁 Run new test                 |
-| `q`           | 🚪 Quit                         |
+| Key           | Action                              |
+|---------------|-------------------------------------|
+| `m`           | 🔄 **Toggle Mode** (DNS ↔ Mirror)   |
+| `Tab`         | ▶️ **Start Testing**                |
+| `Enter`       | ➕ Add DNS IP (in DNS mode)         |
+| `Backspace`   | ❌ Remove last character/server     |
+| `s` / `d`     | 📊 Cycle Sort Column / Toggle Dir  |
+| `a`           | 🛠️ **Apply Fastest DNS** to system   |
+| `r`           | 🔁 Reset and start new test         |
+| `q`           | 🚪 Quit                             |
 
 > [!IMPORTANT]
-> Applying the fastest DNS (`a`) requires elevated privileges:
-> - **Linux**: `sudo` (supports NetworkManager and systemd-resolved).
-> - **macOS**: `sudo` (uses `networksetup`).
-> - **Windows**: **Run as Administrator** (uses `netsh` via PowerShell).
-
-## 🛠️ How It Works
-
-```mermaid
-graph LR
-    A[Enter DNS IPs] --> B[Start Test]
-    B --> C[Measure Latency]
-    C --> D[Test Download Speed]
-    D --> E[Display Last Result]
-    E --> F{More IPs?}
-    F -- Yes --> C
-    F -- No --> G[Display Sorted Results]
-```
-
-1. **Latency Test**: Resolves `www.google.com` using the target DNS.
-2. **Download Test**: Connects directly to a resolved CDN IP to measure throughput.
-3. **Execution Guard**: A `tokio::time::timeout` enforces a **7.5s hard limit** per DNS server.
-
-## 📁 Project Structure
-
-```
-src/
-├── main.rs       # 🚀 Entry point & event loop
-├── app.rs        # 📱 Application state management
-├── ui.rs         # 🎨 TUI rendering
-└── dns_utils.rs  # 🌐 DNS testing logic
-```
-
-## 🔧 Dependencies
-
-| Crate | Purpose |
-|-------|---------|
-| `ratatui` | 🎨 Terminal UI framework |
-| `crossterm` | ⌨️ Cross-platform terminal handling |
-| `tokio` | ⚡ Async runtime |
-| `hickory-resolver` | 🌐 DNS resolution |
-| `reqwest` | 📥 HTTP client for speed tests |
-
-## 🐛 Troubleshooting
-
-### ⚠️ Permission Denied on External Drives (NTFS/exFAT)
-
-If you get this error when building:
-```
-Permission denied (os error 13)
-could not execute process `.../build-script-build`
-```
-
-This happens because external drives (NTFS/exFAT) on Linux don't support execute permissions. Cargo's build scripts in the `target/` folder can't run.
-
-**🔧 Quick Fix (one-time):**
-```bash
-CARGO_TARGET_DIR=/tmp/dns_target cargo build --release
-```
-
-**🔧 Permanent Fix:**
-Add this to your `~/.bashrc` or `~/.zshrc`:
-```bash
-export CARGO_TARGET_DIR="$HOME/.cargo-target"
-```
-
-Then reload your shell:
-```bash
-source ~/.bashrc
-```
-
-Now `cargo build` will work from any external drive! 🎉
-
-### DNS Resolution Timeout
-
-Increase timeout in `src/dns_utils.rs`:
-
-```rust
-opts.timeout = Duration::from_secs(10); // Default is 5
-```
-
-## 📄 License
-
-MIT License - feel free to use and modify!
-
-## 🤝 Contributing
-
-Contributions welcome! Feel free to:
-- 🐛 Report bugs
-- 💡 Suggest features
-- 🔧 Submit pull requests
+> **System DNS Configuration (`a`)**:
+> - **Linux**: Uses `nmcli` or `resolvectl` (requires `sudo`).
+> - **macOS**: Uses `networksetup` (requires `sudo`).
+> - **Windows**: Requires **Administrator Privileges**.
 
 ---
 
-Made with ❤️ and 🦀 Rust
+## 🔧 Technical Details
+
+- **Concurrency**: Built with `tokio` channels (`mpsc`). The UI engine and the Network worker communicate asynchronously, preventing any lag or "ghosting" during heavy downloads.
+- **Dynamic UI**: The `BarChart` uses a custom scaling algorithm to maintain visibility even when benchmarking 30+ servers simultaneously.
+- **Timeout Logic**: A strict **7.5s hard limit** per server ensures the entire test suite stays within a predictable timeframe.
+
+---
+
+## 📁 Project Structure
+
+```text
+src/
+├── main.rs         # Event loop & Worker orchestration
+├── app.rs          # State management & Multi-mode logic
+├── ui.rs           # Animated Ratatui components
+├── dns_utils.rs    # Resolution & Download logic
+├── mirror_utils.rs # Distro detection & Mirror testing
+├── sys_dns.rs      # Cross-platform system configuration
+└── file_loader.rs  # CSV/JSON parsing
+```
+
+---
+
+## 📄 License
+MIT License. Feel free to use, modify, and share!
+
+Made with ❤️ and 🦀 Rust by **SoroushMB**

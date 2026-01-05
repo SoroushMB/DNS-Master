@@ -1,0 +1,21 @@
+name,url,distro
+Kubar - Arch,https://mirrors.kubarcloud.com/archlinux/iso/latest/archlinux-x86_64.iso,Arch
+ArvanCloud - Arch,http://mirror.arvancloud.ir/archlinux/iso/latest/archlinux-x86_64.iso,Arch
+IUT - Arch,http://repo.iut.ac.ir/repo/archlinux/iso/latest/archlinux-x86_64.iso,Arch
+MobinHost - Arch,http://mirror.mobinhost.com/archlinux/iso/latest/archlinux-x86_64.iso,Arch
+Kubar - Debian,https://mirrors.kubarcloud.com/debian/ls-lR.gz,Debian
+ArvanCloud - Debian,http://mirror.arvancloud.ir/debian/ls-lR.gz,Debian
+IUT - Debian,http://repo.iut.ac.ir/debian/ls-lR.gz,Debian
+Kubar - Ubuntu,https://mirrors.kubarcloud.com/ubuntu/ls-lR.gz,Ubuntu
+ArvanCloud - Ubuntu,http://mirror.arvancloud.ir/ubuntu/ls-lR.gz,Ubuntu
+IR Archive - Ubuntu,http://ir.archive.ubuntu.com/ubuntu/ls-lR.gz,Ubuntu
+IUT - Ubuntu,http://repo.iut.ac.ir/ubuntu/ls-lR.gz,Ubuntu
+Kubar - Kali,https://mirrors.kubarcloud.com/kali/ls-lR.gz,Kali
+Kubar - Mint,https://mirrors.kubarcloud.com/linuxmint/ls-lR.gz,Mint
+Kubar - Manjaro,https://mirrors.kubarcloud.com/manjaro/ls-lR.gz,Manjaro
+Kubar - Docker,https://mirrors.kubarcloud.com/docker/v2/,Docker
+ArvanCloud - Docker,https://docker.arvancloud.ir/v2/,Docker
+IranServer - Docker,https://docker.iranserver.com/v2/,Docker
+Karsat - Android,https://mirror.karsat.ir/android/repository/repository-12.xml,AndroidSDK
+PetiaK - Ubuntu,http://archive.ubuntu.petiak.ir/ubuntu/ls-lR.gz,Ubuntu
+AminIDC - Debian,https://mirror.aminidc.com/debian/ls-lR.gz,Debian

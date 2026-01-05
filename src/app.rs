@@ -1,6 +1,8 @@
-use crate::dns_utils::{run_full_test, DnsTestResult};
+use crate::dns_utils::DnsTestResult;
+use crate::mirror_utils::{Distro, Mirror, detect_distro, MirrorTestResult};
 use std::net::IpAddr;
 use tui_input::Input;
+use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppState {
@@ -10,47 +12,89 @@ pub enum AppState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AppMode {
+    Dns,
+    Mirror,
+}
+
+#[derive(Debug, Clone)]
+pub enum TestTarget {
+    Dns(IpAddr),
+    Mirror(Mirror),
+}
+
+#[derive(Debug, Clone)]
+pub enum TestResult {
+    Dns(DnsTestResult),
+    Mirror(MirrorTestResult),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SortColumn {
     Ip,
     Latency,
     DownloadSpeed,
+    Name, // For mirrors
 }
 
 pub struct App {
+    pub mode: AppMode,
     pub state: AppState,
     pub dns_servers: Vec<IpAddr>,
+    pub mirrors: Vec<Mirror>,
     pub input: Input,
     pub results: Vec<DnsTestResult>,
+    pub mirror_results: Vec<MirrorTestResult>,
     pub last_result: Option<DnsTestResult>,
+    pub last_mirror_result: Option<MirrorTestResult>,
     pub best_result: Option<DnsTestResult>,
+    pub best_mirror_result: Option<MirrorTestResult>,
     pub testing_index: usize,
     pub sort_column: SortColumn,
     pub sort_ascending: bool,
     pub should_quit: bool,
     pub error_message: Option<String>,
     pub status_message: Option<(String, bool)>, // (message, is_error)
+    pub detected_distro: Distro,
+    pub tick_count: u64,
+    // Concurrency
+    pub tx: Option<mpsc::Sender<TestTarget>>,
+    pub rx: Option<mpsc::Receiver<TestResult>>,
 }
 
 impl Default for App {
     fn default() -> Self {
+        let distro = detect_distro();
         Self {
+            mode: AppMode::Dns,
             state: AppState::Input,
             dns_servers: Vec::new(),
+            mirrors: Vec::new(),
             input: Input::default(),
             results: Vec::new(),
+            mirror_results: Vec::new(),
             last_result: None,
+            last_mirror_result: None,
             best_result: None,
+            best_mirror_result: None,
             testing_index: 0,
             sort_column: SortColumn::DownloadSpeed,
-            sort_ascending: false, // Descending by default (fastest first)
+            sort_ascending: false,
             should_quit: false,
             error_message: None,
             status_message: None,
+            detected_distro: distro,
+            tick_count: 0,
+            tx: None,
+            rx: None,
         }
     }
 }
 
 impl App {
+    pub fn tick(&mut self) {
+        self.tick_count = self.tick_count.wrapping_add(1);
+    }
     pub fn new(initial_dns: Vec<IpAddr>) -> Self {
         let mut app = Self::default();
         app.dns_servers = initial_dns;
@@ -78,14 +122,6 @@ impl App {
         self.dns_servers.pop();
     }
 
-    /// Start testing
-    pub fn start_testing(&mut self) {
-        if !self.dns_servers.is_empty() {
-            self.state = AppState::Testing;
-            self.testing_index = 0;
-            self.results.clear();
-        }
-    }
 
     /// Get the next DNS server to test
     pub fn get_current_test_target(&self) -> Option<IpAddr> {
@@ -133,6 +169,7 @@ impl App {
         self.sort_results();
     }
 
+
     /// Sort results based on current sort column and direction
     pub fn sort_results(&mut self) {
         let ascending = self.sort_ascending;
@@ -150,11 +187,27 @@ impl App {
                 });
             }
             SortColumn::DownloadSpeed => {
-                self.results.sort_by(|a, b| {
-                    let cmp = a
-                        .download_speed_mbps
-                        .partial_cmp(&b.download_speed_mbps)
-                        .unwrap_or(std::cmp::Ordering::Equal);
+                if self.mode == AppMode::Dns {
+                    self.results.sort_by(|a, b| {
+                        let cmp = a
+                            .download_speed_mbps
+                            .partial_cmp(&b.download_speed_mbps)
+                            .unwrap_or(std::cmp::Ordering::Equal);
+                        if ascending { cmp } else { cmp.reverse() }
+                    });
+                } else {
+                    self.mirror_results.sort_by(|a, b| {
+                        let cmp = a
+                            .speed_mbps
+                            .partial_cmp(&b.speed_mbps)
+                            .unwrap_or(std::cmp::Ordering::Equal);
+                        if ascending { cmp } else { cmp.reverse() }
+                    });
+                }
+            }
+            SortColumn::Name => {
+                self.mirror_results.sort_by(|a, b| {
+                    let cmp = a.name.cmp(&b.name);
                     if ascending { cmp } else { cmp.reverse() }
                 });
             }
@@ -166,7 +219,14 @@ impl App {
         self.sort_column = match self.sort_column {
             SortColumn::Ip => SortColumn::Latency,
             SortColumn::Latency => SortColumn::DownloadSpeed,
-            SortColumn::DownloadSpeed => SortColumn::Ip,
+            SortColumn::DownloadSpeed => {
+                if self.mode == AppMode::Mirror {
+                    SortColumn::Name
+                } else {
+                    SortColumn::Ip
+                }
+            }
+            SortColumn::Name => SortColumn::Ip,
         };
         self.sort_results();
     }
@@ -177,12 +237,17 @@ impl App {
         self.sort_results();
     }
 
+
+
     /// Reset to input state
     pub fn reset(&mut self) {
         self.state = AppState::Input;
         self.results.clear();
+        self.mirror_results.clear();
         self.last_result = None;
+        self.last_mirror_result = None;
         self.best_result = None;
+        self.best_mirror_result = None;
         self.testing_index = 0;
         self.status_message = None;
     }
@@ -203,14 +268,96 @@ impl App {
         }
     }
 
-    /// Run a single test (async)
-    pub async fn run_test_for_current(&mut self) -> bool {
-        if let Some(ip) = self.get_current_test_target() {
-            let result = run_full_test(ip).await;
-            self.record_result(result);
-            true
-        } else {
-            false
+    /// Record a mirror test result
+    pub fn record_mirror_result(&mut self, result: MirrorTestResult) {
+        self.last_mirror_result = Some(result.clone());
+
+        // Update best mirror result (higher speed is better)
+        if let Some(best) = &self.best_mirror_result {
+            let is_better = match (result.speed_mbps, best.speed_mbps) {
+                (Some(s1), Some(s2)) => s1 > s2,
+                (Some(_), None) => true,
+                _ => false,
+            };
+            if is_better {
+                self.best_mirror_result = Some(result.clone());
+            }
+        } else if result.error.is_none() && result.speed_mbps.is_some() {
+            self.best_mirror_result = Some(result.clone());
+        }
+
+        self.mirror_results.push(result);
+        self.testing_index += 1;
+
+        if self.testing_index >= self.mirrors.len() {
+            self.finish_testing();
+        }
+    }
+
+
+    /// Toggle between DNS and Mirror mode
+    pub fn toggle_mode(&mut self) {
+        if self.state == AppState::Input {
+            self.mode = match self.mode {
+                AppMode::Dns => AppMode::Mirror,
+                AppMode::Mirror => AppMode::Dns,
+            };
+            self.reset();
+        }
+    }
+
+    /// Start testing
+    pub fn start_testing(&mut self) {
+        let targets = match self.mode {
+            AppMode::Dns => self.dns_servers.iter().map(|ip| TestTarget::Dns(*ip)).collect::<Vec<_>>(),
+            AppMode::Mirror => self.mirrors.iter().map(|m| TestTarget::Mirror(m.clone())).collect::<Vec<_>>(),
+        };
+
+        if !targets.is_empty() {
+            self.state = AppState::Testing;
+            self.testing_index = 0;
+            self.results.clear();
+            self.mirror_results.clear();
+            
+            // Send the first task
+            if let Some(tx) = &self.tx {
+                if let Some(target) = targets.get(0).cloned() {
+                    let _ = tx.try_send(target);
+                }
+            }
+        }
+    }
+
+    /// Process updates (check for results)
+    pub fn update(&mut self) {
+        if self.state != AppState::Testing {
+            return;
+        }
+
+        while let Ok(result) = self.rx.as_mut().unwrap().try_recv() {
+            match result {
+                TestResult::Dns(res) => self.record_result(res),
+                TestResult::Mirror(res) => self.record_mirror_result(res),
+            }
+
+            // Check if we reached the end
+            let total = match self.mode {
+                AppMode::Dns => self.dns_servers.len(),
+                AppMode::Mirror => self.mirrors.len(),
+            };
+
+            if self.testing_index < total {
+                // Send next task
+                if let Some(tx) = &self.tx {
+                    let target = match self.mode {
+                        AppMode::Dns => TestTarget::Dns(self.dns_servers[self.testing_index]),
+                        AppMode::Mirror => TestTarget::Mirror(self.mirrors[self.testing_index].clone()),
+                    };
+                    let _ = tx.try_send(target);
+                }
+            } else {
+                self.finish_testing();
+            }
         }
     }
 }

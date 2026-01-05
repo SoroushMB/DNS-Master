@@ -1,4 +1,5 @@
-use crate::app::{App, AppState, SortColumn};
+use crate::app::{App, AppMode, AppState, SortColumn};
+use crate::dns_utils::DnsTestResult;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
@@ -8,11 +9,124 @@ use ratatui::{
 };
 
 pub fn ui(frame: &mut Frame, app: &App) {
-    match app.state {
-        AppState::Input => render_input_state(frame, app),
-        AppState::Testing => render_testing_state(frame, app),
-        AppState::Results => render_results_state(frame, app),
+    match app.mode {
+        AppMode::Dns => {
+            match app.state {
+                AppState::Input => render_input_state(frame, app),
+                AppState::Testing => render_testing_state(frame, app),
+                AppState::Results => render_results_state(frame, app),
+            }
+        }
+        AppMode::Mirror => {
+            match app.state {
+                AppState::Input => render_mirror_input_state(frame, app),
+                AppState::Testing => render_testing_state(frame, app), // Sharing testing UI for now
+                AppState::Results => render_mirror_results_state(frame, app),
+            }
+        }
     }
+}
+
+fn render_mirror_input_state(frame: &mut Frame, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints([
+            Constraint::Length(3), // Title
+            Constraint::Min(5),    // Mirror List
+            Constraint::Length(3), // Info
+            Constraint::Length(2), // Help
+        ])
+        .split(frame.area());
+
+    let title = Paragraph::new(format!("🪞 Mirror Master - Distro: {} {}", app.detected_distro.emoji(), app.detected_distro.as_str()))
+        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .block(Block::default().borders(Borders::ALL));
+    frame.render_widget(title, chunks[0]);
+
+    let mirror_items: Vec<ListItem> = app.mirrors.iter()
+        .map(|m| {
+            let content = Line::from(vec![
+                Span::styled(format!("{} {:<20}", m.distro.emoji(), m.name), Style::default().fg(Color::Yellow)),
+                Span::raw(" "),
+                Span::styled(&m.url, Style::default().fg(Color::DarkGray)),
+            ]);
+            ListItem::new(content)
+        })
+        .collect();
+
+    let mirrors_list = List::new(mirror_items)
+        .block(Block::default().title("Mirrors to Test").borders(Borders::ALL))
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+    frame.render_widget(mirrors_list, chunks[1]);
+
+    let info = Paragraph::new(format!("📦 Loaded {} mirrors for {}. Use CSV to add more. ✨", app.mirrors.len(), app.detected_distro.as_str()))
+        .style(Style::default().fg(Color::Green))
+        .block(Block::default().borders(Borders::ALL));
+    frame.render_widget(info, chunks[2]);
+
+    let help = Paragraph::new("⌨️ Tab: Start Testing | 🖱️ m: Switch to DNS Mode | 🛑 q: Quit")
+        .style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(help, chunks[3]);
+}
+
+fn render_mirror_results_state(frame: &mut Frame, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints([
+            Constraint::Length(3), // Title
+            Constraint::Min(5),    // Table
+            Constraint::Length(2), // Help
+        ])
+        .split(frame.area());
+
+    let title = Paragraph::new("🏁 Mirror Test Results 🏁")
+        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .block(Block::default().borders(Borders::ALL));
+    frame.render_widget(title, chunks[0]);
+
+    let header = Row::new(vec![
+        Cell::from("📋 Mirror Name").style(Style::default().fg(Color::Cyan)),
+        Cell::from("⚡ Speed (Mbps)").style(Style::default().fg(Color::Cyan)),
+        Cell::from("🏷️ Status").style(Style::default().fg(Color::Cyan)),
+    ]).height(1);
+
+    let rows = app.mirror_results.iter().map(|result| {
+        let speed_str = result.speed_mbps
+            .map(|s| format!("{:.2}", s))
+            .unwrap_or_else(|| "-".to_string());
+        
+        let (status, status_style) = if let Some(err) = &result.error {
+            (format!("❌ {}", err), Style::default().fg(Color::Red))
+        } else {
+            ("✅ OK".to_string(), Style::default().fg(Color::Green))
+        };
+
+        Row::new(vec![
+            Cell::from(result.name.clone()),
+            Cell::from(speed_str),
+            Cell::from(status).style(status_style),
+        ])
+    });
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Percentage(40),
+            Constraint::Percentage(20),
+            Constraint::Percentage(40),
+        ],
+    )
+    .header(header)
+    .block(Block::default().title("Results").borders(Borders::ALL))
+    .style(Style::default().fg(Color::White));
+
+    frame.render_widget(table, chunks[1]);
+
+    let help = Paragraph::new("⌨️ r: New test | 🖱️ m: Switch Mode | 🛑 q: Quit")
+        .style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(help, chunks[2]);
 }
 
 fn render_input_state(frame: &mut Frame, app: &App) {
@@ -29,7 +143,7 @@ fn render_input_state(frame: &mut Frame, app: &App) {
         .split(frame.area());
 
     // Title
-    let title = Paragraph::new("DNS Speed Tester")
+    let title = Paragraph::new("🌐 DNS Speed Tester 🌐")
         .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         .block(Block::default().borders(Borders::ALL));
     frame.render_widget(title, chunks[0]);
@@ -64,7 +178,7 @@ fn render_input_state(frame: &mut Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Enter DNS IP (press Enter to add)")
+                .title("✍️ Enter DNS IP (press Enter to add)")
                 .border_style(Style::default().fg(Color::Yellow)),
         );
     frame.render_widget(input, chunks[2]);
@@ -81,9 +195,24 @@ fn render_input_state(frame: &mut Frame, app: &App) {
     frame.render_widget(error, chunks[3]);
 
     // Help text
-    let help = Paragraph::new("Enter: Add DNS | Backspace: Remove last | Tab: Start test | q: Quit")
+    let help = Paragraph::new("⌨️ Enter: Add DNS | 🖱️ Backspace: Remove | 📑 Tab: Start test | 🛑 q: Quit")
         .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(help, chunks[4]);
+}
+
+fn get_spinner(tick: u64) -> &'static str {
+    let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    frames[(tick % frames.len() as u64) as usize]
+}
+
+fn get_pulse_color(tick: u64) -> Color {
+    // Pulse between yellow and orange for a "gold" effect
+    let intensity = (tick % 20) as i16;
+    let val = if intensity < 10 { intensity } else { 20 - intensity };
+    let r = 255;
+    let g = 150 + (val * 10) as u8;
+    let b = 0;
+    Color::Rgb(r, g, b)
 }
 
 fn render_testing_state(frame: &mut Frame, app: &App) {
@@ -99,8 +228,9 @@ fn render_testing_state(frame: &mut Frame, app: &App) {
         ])
         .split(frame.area());
 
-    // Title
-    let title = Paragraph::new("Testing DNS Servers...")
+    // Title with spinner
+    let spinner = get_spinner(app.tick_count);
+    let title = Paragraph::new(format!("{} ⏳ Testing Servers... {}", spinner, spinner))
         .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         .block(Block::default().borders(Borders::ALL));
     frame.render_widget(title, chunks[0]);
@@ -137,10 +267,10 @@ fn render_testing_state(frame: &mut Frame, app: &App) {
         .unwrap_or_else(|| "Finishing...".to_string());
 
     let testing_block = Paragraph::new(Line::from(vec![
-        Span::raw("Testing: "),
+        Span::raw("🔍 Testing: "),
         Span::styled(current_dns, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
     ]))
-    .block(Block::default().title("Current Server").borders(Borders::ALL));
+    .block(Block::default().title("🔭 Current Server").borders(Borders::ALL));
     
     // Split the status area for Last Result and Top Result
     let status_chunks = Layout::default()
@@ -237,24 +367,63 @@ fn render_testing_state(frame: &mut Frame, app: &App) {
         vec![Line::from("Awaiting best result...")]
     };
 
+    // Top Result with pulsing border
+    let pulse = get_pulse_color(app.tick_count);
     let top_para = Paragraph::new(top_content)
-        .block(Block::default().title("Top Result").borders(Borders::ALL).border_style(Style::default().fg(Color::Yellow)));
+        .block(Block::default()
+            .title("🏆 Top Result 🏆")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(pulse).add_modifier(Modifier::BOLD)));
     frame.render_widget(top_para, status_chunks[1]);
 
-    // Comparison Chart
-    let chart_data: Vec<(&str, u64)> = app.results.iter()
-        .map(|r| {
-            let label = Box::leak(r.ip.to_string().into_boxed_str());
-            let val = r.download_speed_mbps.unwrap_or(0.0) as u64;
-            (label as &str, val)
-        })
-        .collect();
+    // Comparison Chart with dynamic scaling and no memory leak
+    let labels: Vec<String>;
+    let chart_data: Vec<(&str, u64)>;
+    
+    match app.mode {
+        AppMode::Dns => {
+            labels = app.results.iter().map(|r| r.ip.to_string()).collect();
+            chart_data = app.results.iter().enumerate()
+                .map(|(i, r)| (labels[i].as_str(), r.download_speed_mbps.unwrap_or(0.0) as u64))
+                .collect();
+        }
+        AppMode::Mirror => {
+            labels = app.mirror_results.iter().map(|r| r.name.clone()).collect();
+            chart_data = app.mirror_results.iter().enumerate()
+                .map(|(i, r)| (labels[i].as_str(), r.speed_mbps.unwrap_or(0.0) as u64))
+                .collect();
+        }
+    };
+
+    let num_bars = chart_data.len() as u16;
+    let available_width = chunks[3].width.saturating_sub(4); // Borders
+    
+    // Calculate bar width and gap dynamically.
+    let (bar_width, bar_gap) = if num_bars > 20 {
+        (2, 0)
+    } else if num_bars > 10 {
+        (4, 1)
+    } else {
+        (12, 2)
+    };
+
+    // If we have way too many bars to fit, limit the display
+    let display_data = if num_bars * (bar_width + bar_gap) > available_width && num_bars > 10 {
+        let max_visible = (available_width / (bar_width + bar_gap + 1)) as usize;
+        let half = max_visible / 2;
+        let mut combined = chart_data[..half.min(chart_data.len())].to_vec();
+        let end_start = chart_data.len().saturating_sub(max_visible - half);
+        combined.extend(chart_data[end_start..].to_vec());
+        combined
+    } else {
+        chart_data
+    };
 
     let chart = BarChart::default()
-        .block(Block::default().title("Download Speed Comparison (Mbps)").borders(Borders::ALL))
-        .data(&chart_data)
-        .bar_width(12)
-        .bar_gap(2)
+        .block(Block::default().title("📊 Download Speed Comparison (Mbps)").borders(Borders::ALL))
+        .data(&display_data)
+        .bar_width(bar_width)
+        .bar_gap(bar_gap)
         .bar_style(Style::default().fg(Color::Green))
         .value_style(Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD));
 
@@ -278,17 +447,17 @@ fn render_results_state(frame: &mut Frame, app: &App) {
         .split(frame.area());
 
     // Title
-    let title = Paragraph::new("Test Results")
+    let title = Paragraph::new("🏁 Test Results 🏁")
         .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         .block(Block::default().borders(Borders::ALL));
     frame.render_widget(title, chunks[0]);
 
     // Results table
     let header_cells = [
-        create_header_cell("DNS Server", SortColumn::Ip, app),
-        create_header_cell("Latency", SortColumn::Latency, app),
-        create_header_cell("Download (Mbps)", SortColumn::DownloadSpeed, app),
-        Cell::from("Status"),
+        create_header_cell("🖥️ DNS Server", SortColumn::Ip, app),
+        create_header_cell("⏱️ Latency", SortColumn::Latency, app),
+        create_header_cell("🚀 Download (Mbps)", SortColumn::DownloadSpeed, app),
+        Cell::from("📋 Status"),
     ];
     let header = Row::new(header_cells)
         .style(Style::default().fg(Color::Cyan))
@@ -308,8 +477,8 @@ fn render_results_state(frame: &mut Frame, app: &App) {
         let status = result
             .error
             .as_ref()
-            .map(|e| e.clone())
-            .unwrap_or_else(|| "OK".to_string());
+            .map(|e| format!("❌ {}", e))
+            .unwrap_or_else(|| "✅ OK".to_string());
 
         let status_style = if result.error.is_some() {
             Style::default().fg(Color::Red)
@@ -337,7 +506,7 @@ fn render_results_state(frame: &mut Frame, app: &App) {
     .header(header)
     .block(
         Block::default()
-            .title("Results (sorted by download speed)")
+            .title("📊 Results (sorted by download speed)")
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Blue)),
     )
