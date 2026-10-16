@@ -24,8 +24,18 @@ use tokio::time::timeout;
 
 use crate::dns_utils::create_resolver;
 
-/// Probe timeout per service request.
+/// Total per-service probe envelope (DNS lookup + every attempt + body scan).
+/// The outer `timeout(PROBE_TIMEOUT + 2s, task)` wrapper below is the hard
+/// ceiling and is intentionally left intact.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(6);
+/// Per-*attempt* HTTP request timeout. Deliberately shorter than the outer
+/// envelope so that the ambiguous transport-error retry still fits inside it:
+/// `3s + 400ms backoff + 3s ≈ 6.4s < PROBE_TIMEOUT + 2s (8s)`.
+const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(3);
+/// Delay before the single retry of an ambiguous transport error.
+const RETRY_BACKOFF: Duration = Duration::from_millis(400);
+/// Send attempts per service: the first try plus one cheap retry.
+const MAX_ATTEMPTS: u32 = 2;
 /// How much body to scan for geo-block interstitials.
 const BODY_SCAN_BYTES: usize = 4096;
 
@@ -219,6 +229,54 @@ fn root_cause(e: &reqwest::Error) -> String {
     msg
 }
 
+/// Coarse reason a single request attempt failed, reduced to the only
+/// distinction that affects classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SendFailure {
+    /// The connection could not be established (refused/reset before any
+    /// response was seen): the strongest available signal of IP-level
+    /// filtering toward the resolver's answer.
+    ConnectRefused,
+    /// The attempt elapsed without completing (connect or body-read timeout).
+    Timeout,
+    /// Any other client/transport failure (TLS hiccup, mid-body idle timeout,
+    /// HTTP/2 stream error, ...). Ambiguous: *not* evidence of a geo-block.
+    Request,
+}
+
+/// Final probe classification for a failed attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FailureKind {
+    Blocked,
+    Timeout,
+    Error,
+}
+
+/// Reduce a `reqwest` send error to what matters for classification.
+/// `is_timeout()` is checked first so a connect *timeout* is reported as a
+/// timeout rather than a refusal (`reqwest` also flags connect timeouts as
+/// connect errors).
+fn send_failure(e: &reqwest::Error) -> SendFailure {
+    if e.is_timeout() {
+        SendFailure::Timeout
+    } else if e.is_connect() {
+        SendFailure::ConnectRefused
+    } else {
+        SendFailure::Request
+    }
+}
+
+/// Map a failed attempt to its final classification. Only a fast
+/// connection-level refusal/reset counts as `Blocked`; every other transport
+/// failure (including `is_request()`/`is_body()`) stays an ambiguous `Error`.
+fn failure_kind(reason: SendFailure) -> FailureKind {
+    match reason {
+        SendFailure::ConnectRefused => FailureKind::Blocked,
+        SendFailure::Timeout => FailureKind::Timeout,
+        SendFailure::Request => FailureKind::Error,
+    }
+}
+
 async fn probe_one(ip: IpAddr, def: ProbeDef) -> ProbeStatus {
     let host = def.host.to_string();
     let url = def.url.to_string();
@@ -240,25 +298,38 @@ async fn probe_one(ip: IpAddr, def: ProbeDef) -> ProbeStatus {
 
         let client = match Client::builder()
             .resolve(&host, SocketAddr::new(resolved, 443))
-            .timeout(PROBE_TIMEOUT)
-            .connect_timeout(Duration::from_secs(5))
+            .timeout(ATTEMPT_TIMEOUT)
+            .connect_timeout(ATTEMPT_TIMEOUT)
             .build()
         {
             Ok(c) => c,
             Err(_) => return ProbeStatus::Error("client build failed".into()),
         };
 
-        let resp = match client.get(&url).send().await {
-            Ok(r) => r,
-            Err(e) => {
-                return if e.is_timeout() {
-                    ProbeStatus::Timeout
-                } else if e.is_connect() || e.is_request() || e.is_body() {
-                    // Refused/reset fast: IP-level filtering toward resolver's answer
-                    ProbeStatus::Blocked
-                } else {
-                    ProbeStatus::Error(root_cause(&e))
-                };
+        let mut attempt = 0;
+        let resp = loop {
+            attempt += 1;
+            match client.get(&url).send().await {
+                Ok(r) => break r,
+                Err(e) => {
+                    let reason = send_failure(&e);
+                    // A single transport error is ambiguous (slow-streaming
+                    // body, TLS hiccup, idle timeout mid-body, ...), so it is
+                    // never a confident ✗ Blocked. Retry it once cheaply, then
+                    // fall through to the final classification.
+                    if reason == SendFailure::Request && attempt < MAX_ATTEMPTS {
+                        tokio::time::sleep(RETRY_BACKOFF).await;
+                        continue;
+                    }
+                    return match failure_kind(reason) {
+                        // Fast connection-level refusal/reset toward the
+                        // resolver's answer.
+                        FailureKind::Blocked => ProbeStatus::Blocked,
+                        FailureKind::Timeout => ProbeStatus::Timeout,
+                        // Ambiguous client/transport failure.
+                        FailureKind::Error => ProbeStatus::Error(root_cause(&e)),
+                    };
+                }
             }
         };
 
@@ -318,4 +389,28 @@ pub async fn probe_services(ip: IpAddr, services: &[Service]) -> BTreeMap<Servic
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn connect_refusal_maps_to_blocked() {
+        assert_eq!(
+            failure_kind(SendFailure::ConnectRefused),
+            FailureKind::Blocked
+        );
+    }
+
+    #[test]
+    fn request_error_is_ambiguous_not_blocked() {
+        // is_request()/is_body() failures must never be a confident ✗ Blocked.
+        assert_eq!(failure_kind(SendFailure::Request), FailureKind::Error);
+    }
+
+    #[test]
+    fn timeout_maps_to_timeout() {
+        assert_eq!(failure_kind(SendFailure::Timeout), FailureKind::Timeout);
+    }
 }

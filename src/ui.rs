@@ -14,7 +14,7 @@ use crate::catalog::Category;
 use crate::engine::{SortColumn, TargetRole, TestResult};
 use crate::probe::ProbeStatus;
 
-pub fn ui(frame: &mut Frame, app: &App) {
+pub fn ui(frame: &mut Frame, app: &mut App) {
     match app.state {
         AppState::Home => render_home(frame, app),
         AppState::Testing => render_testing(frame, app),
@@ -597,7 +597,7 @@ fn summary_lines(res: &TestResult) -> Vec<Line<'static>> {
 
 // --------------------------------------------------------------- Results
 
-pub fn render_results(frame: &mut Frame, app: &App) {
+pub fn render_results(frame: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -752,20 +752,31 @@ pub fn render_results(frame: &mut Frame, app: &App) {
     widths.push(Constraint::Length(6));
     widths.push(Constraint::Length(9));
 
-    let visible_height = chunks[1].height.saturating_sub(3) as usize; // borders + header
+    // Rows actually visible in the table body: the table chunk height minus its
+    // two border lines and the one header row. Stored so that scrolling clamps
+    // to the last full page instead of leaving a blank screen.
+    let visible_height = chunks[1].height.saturating_sub(3) as usize;
+    app.table_viewport = visible_height;
+
     let rows: Vec<Row> = rows
         .into_iter()
         .skip(app.table_offset)
         .take(visible_height)
         .collect();
 
+    let export_hint = if app.export_path.is_some() {
+        " — e export"
+    } else {
+        ""
+    };
     let table = Table::new(rows, widths)
         .header(header)
         .block(
             Block::default()
                 .title(format!(
-                    "Ranked servers ({} rows — e export)",
-                    app.results.len()
+                    "Ranked servers ({} rows{})",
+                    app.results.len(),
+                    export_hint
                 ))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Blue)),
@@ -780,13 +791,25 @@ pub fn render_results(frame: &mut Frame, app: &App) {
             if *is_error {
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD)
             },
         ),
-        None => (
-            "⌨️  s sort | d direction | ↑/↓ scroll | a apply best to system | e export JSON/CSV | r re-run | h home | q quit".to_string(),
-            Style::default().fg(Color::DarkGray),
-        ),
+        None => {
+            let export_keys = if app.export_path.is_some() {
+                " | e export JSON/CSV"
+            } else {
+                ""
+            };
+            (
+                format!(
+                    "⌨️  s sort | d direction | ↑/↓ scroll | a apply best to system{} | r re-run | h home | q quit",
+                    export_keys
+                ),
+                Style::default().fg(Color::DarkGray),
+            )
+        }
     };
     frame.render_widget(Paragraph::new(footer_text).style(footer_style), chunks[2]);
 }

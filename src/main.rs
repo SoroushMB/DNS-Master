@@ -18,6 +18,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
+use std::collections::BTreeSet;
 use std::io;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -73,6 +74,10 @@ struct Cli {
     /// After testing, apply the best server as system DNS (needs sudo/Admin)
     #[arg(long)]
     apply: bool,
+
+    /// Test only the IPs given with -d/--dns; do not add the built-in featured catalog
+    #[arg(long)]
+    only_dns: bool,
 
     /// Typos hidden shots helper: prints the checked services and exits
     #[arg(long, hide = true)]
@@ -187,7 +192,13 @@ fn headless_run(
     category_filter: Option<catalog::Category>,
     services: Vec<Service>,
 ) -> Result<()> {
-    let included = engine::default_included(builtin, category_filter);
+    // --only-dns: test exactly the custom -d IPs (deduped). An empty inclusion
+    // set makes build_targets skip every catalog entry, so only custom IPs remain.
+    let included = if cli.only_dns {
+        BTreeSet::new()
+    } else {
+        engine::default_included(builtin, category_filter)
+    };
     let targets = engine::build_targets(&custom, builtin, &included);
     if targets.is_empty() {
         anyhow::bail!("No targets selected: add IPs via -d/--json/--csv or adjust --category");

@@ -111,7 +111,7 @@ fn set_macos_dns(dns_ip: IpAddr) -> Result<()> {
 #[cfg(target_os = "linux")]
 fn set_linux_dns(dns_ip: IpAddr) -> Result<()> {
     // Try nmcli first (NetworkManager)
-    if let Ok(_) = Command::new("nmcli").arg("--version").output() {
+    if Command::new("nmcli").arg("--version").output().is_ok() {
         match set_via_nmcli(dns_ip) {
             Ok(_) => return Ok(()),
             Err(e) => {
@@ -122,7 +122,7 @@ fn set_linux_dns(dns_ip: IpAddr) -> Result<()> {
     }
 
     // Try resolvectl (systemd-resolved)
-    if let Ok(_) = Command::new("resolvectl").arg("--version").output() {
+    if Command::new("resolvectl").arg("--version").output().is_ok() {
         return set_via_resolvectl(dns_ip);
     }
 

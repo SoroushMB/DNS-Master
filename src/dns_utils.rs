@@ -16,6 +16,14 @@ const DOWNLOAD_TIMEOUT_SECS: u64 = 7;
 const LATENCY_ATTEMPTS: usize = 2;
 const DOWNLOAD_ATTEMPTS: usize = 2;
 
+/// Strict per-target hard cap for the whole test (latency + download).
+const OVERALL_BUDGET: Duration = Duration::from_millis(7500);
+/// Dedicated budget for the latency phase. It runs before the download phase,
+/// so a slow or hanging download can never consume the ping's time. It covers
+/// `test_latency`'s full retry path (`LATENCY_ATTEMPTS` × 2s resolver timeout
+/// + the 200ms sleep ≈ 4.2s) so a slow-but-working resolver is not cut off.
+const LATENCY_PHASE_BUDGET: Duration = Duration::from_millis(4500);
+
 pub type TokioResolver = Resolver<TokioConnectionProvider>;
 
 /// Create a DNS resolver pointed at a specific server (plain UDP/53).
@@ -138,37 +146,59 @@ impl DnsTestResult {
     }
 }
 
+/// Annotate a result whose download phase was cut short by the timeout.
+///
+/// This only adds a timeout `error` message: any measurements already taken
+/// before the cut — latency, and speed if it was set — are preserved rather
+/// than discarded by constructing a fresh empty result.
+fn finalize_after_timeout(result: &mut DnsTestResult) {
+    result.error = Some(format!(
+        "Test timed out (exceeded {}s); kept partial results",
+        OVERALL_BUDGET.as_secs_f32()
+    ));
+}
+
 /// Run a full test (latency + download speed) for a given DNS server.
-/// Enforces a hard 7.5-second limit for the entire process.
+///
+/// Each target has a strict [`OVERALL_BUDGET`] hard cap. The latency probe runs
+/// first under its own bounded [`LATENCY_PHASE_BUDGET`] and is stored into the
+/// result before the download phase starts, so a slow or hanging download can
+/// never erase an already-successful ping. The download then runs under a
+/// timeout derived from whatever time is left of the overall cap; when that is
+/// exhausted the download is cut but the partial result is kept and annotated
+/// with a timeout `error` via [`finalize_after_timeout`].
 pub async fn run_full_test(dns_ip: IpAddr) -> DnsTestResult {
     let mut result = DnsTestResult::new(dns_ip);
+    let started = Instant::now();
 
-    let test_future = async {
-        match test_latency(dns_ip).await {
-            Ok(latency) => result.latency = Some(latency),
-            Err(e) => {
-                result.error = Some(format!("Latency test failed: {}", e));
-                return result;
-            }
+    // Phase 1: latency, with its own bounded budget. Kept outside the download
+    // phase so its measurement is never thrown away on a download timeout.
+    match tokio::time::timeout(LATENCY_PHASE_BUDGET, test_latency(dns_ip)).await {
+        Ok(Ok(latency)) => result.latency = Some(latency),
+        Ok(Err(e)) => {
+            result.error = Some(format!("Latency test failed: {e}"));
+            // Without a reachable resolver there is no point benchmarking a
+            // download (whose DNS lookup would fail for the same reason).
+            return result;
         }
-
-        match test_download_speed(dns_ip).await {
-            Ok(speed) => result.download_speed_mbps = Some(speed),
-            Err(e) => {
-                result.error = Some(format!("Download test failed: {}", e));
-            }
-        }
-        result
-    };
-
-    match tokio::time::timeout(Duration::from_millis(7500), test_future).await {
-        Ok(res) => res,
         Err(_) => {
-            let mut timeout_result = DnsTestResult::new(dns_ip);
-            timeout_result.error = Some("Test timed out (exceeded 7.5s)".to_string());
-            timeout_result
+            result.error = Some(format!(
+                "Latency test timed out (exceeded {}s)",
+                LATENCY_PHASE_BUDGET.as_secs_f32()
+            ));
+            return result;
         }
     }
+
+    // Phase 2: download speed, limited to the remaining slice of the overall cap.
+    let remaining = OVERALL_BUDGET.saturating_sub(started.elapsed());
+    match tokio::time::timeout(remaining, test_download_speed(dns_ip)).await {
+        Ok(Ok(speed)) => result.download_speed_mbps = Some(speed),
+        Ok(Err(e)) => result.error = Some(format!("Download test failed: {e}")),
+        Err(_) => finalize_after_timeout(&mut result),
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -183,5 +213,32 @@ mod tests {
         assert!(r.is_ok());
         r.error = Some("x".into());
         assert!(!r.is_ok());
+    }
+
+    #[test]
+    fn timeout_preserves_latency() {
+        let mut r = DnsTestResult::new("1.1.1.1".parse().unwrap());
+        r.latency = Some(Duration::from_millis(42));
+
+        finalize_after_timeout(&mut r);
+
+        assert_eq!(r.latency, Some(Duration::from_millis(42)));
+        let err = r.error.as_deref().expect("timeout should record an error");
+        assert!(err.contains("timed out"), "unexpected error: {err}");
+        // An errored result is not "ok", but the ping value is still kept.
+        assert!(!r.is_ok());
+    }
+
+    #[test]
+    fn timeout_preserves_download_speed_too() {
+        let mut r = DnsTestResult::new("1.1.1.1".parse().unwrap());
+        r.latency = Some(Duration::from_millis(10));
+        r.download_speed_mbps = Some(12.5);
+
+        finalize_after_timeout(&mut r);
+
+        assert_eq!(r.latency, Some(Duration::from_millis(10)));
+        assert_eq!(r.download_speed_mbps, Some(12.5));
+        assert!(r.error.as_deref().is_some_and(|e| e.contains("timed out")));
     }
 }

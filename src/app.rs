@@ -56,6 +56,8 @@ pub struct App {
     pub sort_column: SortColumn,
     pub sort_ascending: bool,
     pub table_offset: usize,
+    /// Rows visible in the results table, refreshed on every draw (see `ui::render_results`).
+    pub table_viewport: usize,
     pub export_path: Option<String>,
 
     // Plumbing.
@@ -100,6 +102,7 @@ impl App {
             sort_column: SortColumn::Score,
             sort_ascending: false,
             table_offset: 0,
+            table_viewport: 0,
             export_path: None,
             should_quit: false,
             status_message: None,
@@ -357,8 +360,12 @@ impl App {
         if len == 0 {
             return;
         }
+        // Never scroll past the last full page: the furthest valid offset shows
+        // the final `viewport` rows without trailing blank space.
+        let viewport = self.table_viewport.max(1);
+        let max_offset = len.saturating_sub(viewport);
         let cur = self.table_offset as i64 + delta as i64;
-        self.table_offset = cur.clamp(0, len as i64 - 1) as usize;
+        self.table_offset = cur.clamp(0, max_offset as i64) as usize;
     }
 
     /// Apply the best result's IP to the system (see sys_dns docs).
@@ -383,13 +390,12 @@ impl App {
     }
 
     pub fn export_results(&mut self) {
-        let Some(path) = self.export_path.clone() else {
-            self.status_message = Some((
-                "No export path set — pass --export <file> to enable".into(),
-                true,
-            ));
-            return;
-        };
+        // Default to JSON in the current working directory when no --export
+        // path was configured, so pressing `e` always produces a file.
+        let path = self
+            .export_path
+            .clone()
+            .unwrap_or_else(|| "dns-results.json".to_string());
         let is_csv = path.ends_with(".csv");
         match crate::export::write_results(&self.results, &path, is_csv) {
             Ok(n) => {

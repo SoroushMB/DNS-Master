@@ -75,7 +75,8 @@ a 🔒 marker when the provider offers DoH.
 ```
 
 CLI flags: `-d/--dns`, `--json`, `--csv`, `--category`, `--verify`,
-`--lanes N` (default 2), `--non-interactive`, `--export file(.json|.csv)`,
+`--lanes N` (default 2), `--only-dns` (skip the built-in featured catalog and
+test only your `-d` IPs), `--non-interactive`, `--export file(.json|.csv)`,
 `--apply`, `--show-services`.
 
 ---

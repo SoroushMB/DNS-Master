@@ -74,10 +74,15 @@ impl TestResult {
     /// 0.0 .. 1.0 composite score:
     /// 40% download speed (normalized by best in batch), 30% unlocked services,
     /// 20% latency, 10% "resolver answered at all".
+    ///
+    /// Conventions for unknown inputs:
+    /// * `speed_norm`: when the batch max download speed is unknown (`None`, or
+    ///   non-positive), speed contributes `0.0` (conservative).
+    /// * `unlocked_norm`: when no probes were requested, the term contributes a
+    ///   documented neutral `0.5` rather than penalizing an untested resolver.
     pub fn score(&self, max_speed: Option<f64>) -> f64 {
         let speed_norm = match (self.dns.download_speed_mbps, max_speed) {
             (Some(s), Some(m)) if m > 0.0 => s / m,
-            (Some(_), None) => 0.0,
             _ => 0.0,
         };
         let unlocked_norm = if self.probes.is_empty() {
@@ -234,16 +239,26 @@ pub fn spawn_engine(lanes: usize, services: Arc<Vec<Service>>) -> Engine {
                         }
                     }
 
-                    if let Ok(permit) = sem.clone().acquire_owned().await {
-                        let services = services.clone();
-                        let tx_res = tx_res.clone();
-                        let handle = tokio::spawn(async move {
-                            let res = run_target(meta, &services).await;
-                            let _ = tx_res.send(Reply { epoch, res }).await;
-                            drop(permit);
-                        });
-                        active.entry(epoch).or_default().push(handle);
-                    }
+                    // Spawn immediately so the recv loop keeps draining commands:
+                    // a queued `Test` must never block a later `Command::Stop`.
+                    // The concurrency permit is acquired *inside* the task
+                    // instead of here. While the task waits for a permit it is
+                    // already registered in `active`, so a stale epoch or a
+                    // `Stop` can still abort it, and aborting a task blocked on
+                    // `acquire_owned` cancels the wait without consuming a
+                    // permit (no leak, no wasted lane).
+                    let services = services.clone();
+                    let tx_res = tx_res.clone();
+                    let sem = sem.clone();
+                    let handle = tokio::spawn(async move {
+                        let Ok(permit) = sem.acquire_owned().await else {
+                            return;
+                        };
+                        let res = run_target(meta, &services).await;
+                        let _ = tx_res.send(Reply { epoch, res }).await;
+                        drop(permit);
+                    });
+                    active.entry(epoch).or_default().push(handle);
                 }
                 Command::Stop => {
                     for (_, handles) in active.drain() {
@@ -366,6 +381,17 @@ mod tests {
             (Service::YouTube, ProbeStatus::Timeout),
         ];
         assert!(fast.score(max) > dull.score(max));
+    }
+
+    #[test]
+    fn score_speed_is_zero_when_batch_max_unknown() {
+        let r = fake_result(Some(50.0), 100, true);
+        // Unknown max speed => speed_norm is 0.0 (conservative): the only
+        // difference vs a known max is exactly the 0.4 weight of the speed term.
+        let unknown = r.score(None);
+        let known = r.score(Some(50.0));
+        assert!(unknown < known);
+        assert!((known - unknown - 0.4).abs() < 1e-9);
     }
 
     #[test]
