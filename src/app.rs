@@ -1,363 +1,401 @@
-use crate::dns_utils::DnsTestResult;
-use crate::mirror_utils::{Distro, Mirror, detect_distro, MirrorTestResult};
-use std::net::IpAddr;
-use tui_input::Input;
-use tokio::sync::mpsc;
+//! Application state: catalog selection on the Home screen, bounded-parallel
+//! testing with epoch-based cancellation, and ranked results.
 
-#[derive(Debug, Clone, PartialEq)]
+use std::collections::BTreeSet;
+use std::net::IpAddr;
+use std::time::Instant;
+use tui_input::Input;
+
+use crate::catalog::{CatalogEntry, Category};
+use crate::engine::{
+    Command, Reply, SortColumn, TargetMeta, TestResult, build_targets, default_included,
+    max_download_speed,
+};
+use crate::probe::Service;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppState {
-    Input,
+    Home,
     Testing,
     Results,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AppMode {
-    Dns,
-    Mirror,
-}
+/// Watchdog slack added to the per-wave budget; even a wedged worker task
+/// can never make the UI wait forever.
+const DEADLINE_SLACK_SECS: u64 = 10;
 
-#[derive(Debug, Clone)]
-pub enum TestTarget {
-    Dns(IpAddr),
-    Mirror(Mirror),
-}
-
-#[derive(Debug, Clone)]
-pub enum TestResult {
-    Dns(DnsTestResult),
-    Mirror(MirrorTestResult),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SortColumn {
-    Ip,
-    Latency,
-    DownloadSpeed,
-    Name, // For mirrors
-}
+/// Per-target hard budget used for watchdog math (seconds; matches engine).
+const TARGET_BUDGET_SECS: u64 = 20;
 
 pub struct App {
-    pub mode: AppMode,
     pub state: AppState,
-    pub dns_servers: Vec<IpAddr>,
-    pub mirrors: Vec<Mirror>,
+
+    // Home screen: built-in catalog + user additions.
+    pub builtin: Vec<CatalogEntry>,
+    pub catalog_version: u32,
+    pub catalog_updated: String,
+    pub included: BTreeSet<String>,
+    pub category_filter: Option<Category>,
+    pub custom: Vec<IpAddr>,
     pub input: Input,
-    pub results: Vec<DnsTestResult>,
-    pub mirror_results: Vec<MirrorTestResult>,
-    pub last_result: Option<DnsTestResult>,
-    pub last_mirror_result: Option<MirrorTestResult>,
-    pub best_result: Option<DnsTestResult>,
-    pub best_mirror_result: Option<MirrorTestResult>,
-    pub testing_index: usize,
+    pub cursor: usize,
+    pub error_message: Option<String>,
+
+    // Testing/progress.
+    pub targets: Vec<TargetMeta>,
+    pub epoch: u64,
+    pub lanes: usize,
+    pub services: Vec<Service>,
+    pub next_dispatch: usize,
+    pub in_flight: Vec<TargetMeta>,
+    pub last_result: Option<TestResult>,
+    pub deadline: Option<Instant>,
+
+    // Results.
+    pub results: Vec<TestResult>,
     pub sort_column: SortColumn,
     pub sort_ascending: bool,
+    pub table_offset: usize,
+    pub export_path: Option<String>,
+
+    // Plumbing.
     pub should_quit: bool,
-    pub error_message: Option<String>,
     pub status_message: Option<(String, bool)>, // (message, is_error)
-    pub detected_distro: Distro,
     pub tick_count: u64,
-    // Concurrency
-    pub tx: Option<mpsc::Sender<TestTarget>>,
-    pub rx: Option<mpsc::Receiver<TestResult>>,
+    pub tx: Option<tokio::sync::mpsc::Sender<Command>>,
+    pub rx: Option<tokio::sync::mpsc::Receiver<Reply>>,
 }
 
-impl Default for App {
-    fn default() -> Self {
-        let distro = detect_distro();
+impl App {
+    pub fn new(
+        initial_dns: Vec<IpAddr>,
+        builtin: Vec<CatalogEntry>,
+        catalog_version: u32,
+        catalog_updated: String,
+        category_filter: Option<Category>,
+        lanes: usize,
+        services: Vec<Service>,
+    ) -> Self {
+        let included = default_included(&builtin, category_filter);
         Self {
-            mode: AppMode::Dns,
-            state: AppState::Input,
-            dns_servers: Vec::new(),
-            mirrors: Vec::new(),
+            state: AppState::Home,
+            builtin,
+            catalog_version,
+            catalog_updated,
+            included,
+            category_filter,
+            custom: initial_dns,
             input: Input::default(),
-            results: Vec::new(),
-            mirror_results: Vec::new(),
-            last_result: None,
-            last_mirror_result: None,
-            best_result: None,
-            best_mirror_result: None,
-            testing_index: 0,
-            sort_column: SortColumn::DownloadSpeed,
-            sort_ascending: false,
-            should_quit: false,
+            cursor: 0,
             error_message: None,
+            targets: Vec::new(),
+            epoch: 0,
+            lanes: lanes.max(1),
+            services,
+            next_dispatch: 0,
+            in_flight: Vec::new(),
+            last_result: None,
+            deadline: None,
+            results: Vec::new(),
+            sort_column: SortColumn::Score,
+            sort_ascending: false,
+            table_offset: 0,
+            export_path: None,
+            should_quit: false,
             status_message: None,
-            detected_distro: distro,
             tick_count: 0,
             tx: None,
             rx: None,
         }
     }
-}
 
-impl App {
     pub fn tick(&mut self) {
         self.tick_count = self.tick_count.wrapping_add(1);
     }
-    pub fn new(initial_dns: Vec<IpAddr>) -> Self {
-        let mut app = Self::default();
-        app.dns_servers = initial_dns;
-        app
+
+    // ---------------------------------------------------------------- Home
+
+    fn visible_entries(&self) -> Vec<usize> {
+        self.builtin
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| self.category_filter.is_none_or(|c| e.category == c))
+            .map(|(i, _)| i)
+            .collect()
     }
 
-    /// Add a DNS server to the list
-    pub fn add_dns_server(&mut self) {
-        let input_value = self.input.value().trim().to_string();
-        if let Ok(ip) = input_value.parse::<IpAddr>() {
-            if !self.dns_servers.contains(&ip) {
-                self.dns_servers.push(ip);
-                self.error_message = None;
-            } else {
-                self.error_message = Some(format!("{} is already in the list", ip));
-            }
+    pub fn move_cursor_up(&mut self) {
+        self.cursor = self.cursor.saturating_sub(1);
+    }
+
+    pub fn move_cursor_down(&mut self) {
+        let len = self.visible_entries().len();
+        if len > 0 {
+            self.cursor = (self.cursor + 1).min(len - 1);
+        }
+    }
+
+    /// Toggle whether the entry under the cursor participates in the next run.
+    pub fn toggle_include(&mut self) {
+        let Some(entry_idx) = self.visible_entries().get(self.cursor).copied() else {
+            return;
+        };
+        let Some(entry) = self.builtin.get(entry_idx) else {
+            return;
+        };
+        if self.included.contains(&entry.name) {
+            self.included.remove(&entry.name);
         } else {
-            self.error_message = Some(format!("Invalid IP address: {}", input_value));
+            self.included.insert(entry.name.clone());
+        }
+    }
+
+    /// Add the typed IP as a custom server.
+    pub fn add_custom_from_input(&mut self) {
+        let value = self.input.value().trim().to_string();
+        match value.parse::<IpAddr>() {
+            Ok(ip) => {
+                if self.custom.contains(&ip) {
+                    self.error_message = Some(format!("{} is already in the list", ip));
+                } else {
+                    self.custom.push(ip);
+                    self.error_message = None;
+                }
+            }
+            Err(_) => {
+                let shown = if value.is_empty() {
+                    "<empty>".to_string()
+                } else {
+                    value
+                };
+                self.error_message = Some(format!("Invalid IP address: {}", shown));
+            }
         }
         self.input.reset();
     }
 
-    /// Remove the last DNS server from the list
-    pub fn remove_last_dns_server(&mut self) {
-        self.dns_servers.pop();
+    pub fn remove_last_custom(&mut self) {
+        self.custom.pop();
     }
 
+    // ------------------------------------------------------------- Testing
 
-    /// Get the next DNS server to test
-    pub fn get_current_test_target(&self) -> Option<IpAddr> {
-        self.dns_servers.get(self.testing_index).copied()
+    pub fn start_testing(&mut self) {
+        let targets = build_targets(&self.custom, &self.builtin, &self.included);
+        if targets.is_empty() {
+            self.error_message =
+                Some("Nothing selected — include catalog entries (space) or add IPs".into());
+            return;
+        }
+        self.epoch = self.epoch.wrapping_add(1);
+        self.epoch_start(targets);
     }
 
-    /// Record a test result and advance to the next server
-    pub fn record_result(&mut self, result: DnsTestResult) {
-        self.last_result = Some(result.clone());
+    /// Re-run the same target set with a fresh epoch.
+    pub fn rerun(&mut self) {
+        self.epoch = self.epoch.wrapping_add(1);
+        self.epoch_start(self.targets.clone());
+    }
 
-        // Update best result (higher speed is better, then lower latency)
-        if let Some(best) = &self.best_result {
-            let is_better = match (result.download_speed_mbps, best.download_speed_mbps) {
-                (Some(s1), Some(s2)) if (s1 - s2).abs() > 0.01 => s1 > s2,
-                (Some(_), None) => true,
-                (None, Some(_)) => false,
-                _ => {
-                    // Speeds are similar or both None, compare latency
-                    match (result.latency, best.latency) {
-                        (Some(l1), Some(l2)) => l1 < l2,
-                        (Some(_), None) => true,
-                        (None, Some(_)) => false,
-                        _ => false,
-                    }
-                }
-            };
-            if is_better {
-                self.best_result = Some(result.clone());
-            }
-        } else if result.error.is_none() && (result.latency.is_some() || result.download_speed_mbps.is_some()) {
-            self.best_result = Some(result.clone());
+    fn epoch_start(&mut self, targets: Vec<TargetMeta>) {
+        self.state = AppState::Testing;
+        self.targets = targets;
+        self.results.clear();
+        self.in_flight.clear();
+        self.last_result = None;
+        self.next_dispatch = 0;
+        self.table_offset = 0;
+        self.error_message = None;
+        self.status_message = None;
+
+        let waves = self.targets.len().div_ceil(self.lanes);
+        self.deadline = Some(
+            Instant::now()
+                + std::time::Duration::from_secs(
+                    waves as u64 * TARGET_BUDGET_SECS + DEADLINE_SLACK_SECS,
+                ),
+        );
+
+        for _ in 0..self.lanes.min(self.targets.len()) {
+            self.dispatch_next();
+        }
+    }
+
+    fn dispatch_next(&mut self) {
+        if self.next_dispatch >= self.targets.len() {
+            return;
+        }
+        let meta = self.targets[self.next_dispatch].clone();
+        self.next_dispatch += 1;
+        self.in_flight.push(meta.clone());
+        if let Some(tx) = &self.tx {
+            let _ = tx.try_send(Command::Test {
+                epoch: self.epoch,
+                meta,
+            });
+        }
+    }
+
+    /// Drain worker replies; ignore stale epochs; watchdog stale runs.
+    pub fn pump_results(&mut self) {
+        if self.state != AppState::Testing || self.rx.is_none() {
+            return;
         }
 
-        self.results.push(result);
-        self.testing_index += 1;
+        while let Ok(reply) = self.rx.as_mut().unwrap().try_recv() {
+            if reply.epoch != self.epoch {
+                continue;
+            }
+            self.handle_result(reply.res);
+        }
 
-        if self.testing_index >= self.dns_servers.len() {
+        if let Some(deadline) = self.deadline
+            && Instant::now() > deadline
+        {
+            let in_flight = std::mem::take(&mut self.in_flight);
+            for meta in in_flight {
+                let mut res = crate::dns_utils::DnsTestResult::new(meta.ip);
+                res.error = Some("Aborted (watchdog deadline reached)".into());
+                let probes = self
+                    .services
+                    .iter()
+                    .map(|s| (*s, crate::probe::ProbeStatus::Timeout))
+                    .collect();
+                self.record_done(TestResult {
+                    meta,
+                    dns: res,
+                    probes,
+                });
+            }
+            // Deadline hit: never leave the user hanging.
             self.finish_testing();
         }
     }
 
-    /// Finish testing and show results
-    fn finish_testing(&mut self) {
-        self.state = AppState::Results;
-        self.sort_results();
-    }
-
-
-    /// Sort results based on current sort column and direction
-    pub fn sort_results(&mut self) {
-        let ascending = self.sort_ascending;
-        match self.sort_column {
-            SortColumn::Ip => {
-                self.results.sort_by(|a, b| {
-                    let cmp = a.ip.to_string().cmp(&b.ip.to_string());
-                    if ascending { cmp } else { cmp.reverse() }
-                });
-            }
-            SortColumn::Latency => {
-                self.results.sort_by(|a, b| {
-                    let cmp = a.latency.cmp(&b.latency);
-                    if ascending { cmp } else { cmp.reverse() }
-                });
-            }
-            SortColumn::DownloadSpeed => {
-                if self.mode == AppMode::Dns {
-                    self.results.sort_by(|a, b| {
-                        let cmp = a
-                            .download_speed_mbps
-                            .partial_cmp(&b.download_speed_mbps)
-                            .unwrap_or(std::cmp::Ordering::Equal);
-                        if ascending { cmp } else { cmp.reverse() }
-                    });
-                } else {
-                    self.mirror_results.sort_by(|a, b| {
-                        let cmp = a
-                            .speed_mbps
-                            .partial_cmp(&b.speed_mbps)
-                            .unwrap_or(std::cmp::Ordering::Equal);
-                        if ascending { cmp } else { cmp.reverse() }
-                    });
-                }
-            }
-            SortColumn::Name => {
-                self.mirror_results.sort_by(|a, b| {
-                    let cmp = a.name.cmp(&b.name);
-                    if ascending { cmp } else { cmp.reverse() }
-                });
-            }
+    fn handle_result(&mut self, res: TestResult) {
+        self.in_flight.retain(|m| m.ip != res.meta.ip);
+        self.record_done(res);
+        if self.next_dispatch < self.targets.len() && self.state == AppState::Testing {
+            self.dispatch_next();
+        }
+        if self.state == AppState::Testing && self.in_flight.is_empty() {
+            self.finish_testing();
         }
     }
 
-    /// Cycle sort column
+    fn record_done(&mut self, res: TestResult) {
+        self.last_result = Some(res.clone());
+        self.results.push(res);
+    }
+
+    fn finish_testing(&mut self) {
+        let max = max_download_speed(&self.results);
+        crate::engine::sort_results(
+            &mut self.results,
+            self.sort_column,
+            self.sort_ascending,
+            max,
+        );
+        self.state = AppState::Results;
+        self.deadline = None;
+    }
+
+    /// Cancel current runs; return to Home. Old-epoch results are dropped.
+    pub fn reset_to_home(&mut self) {
+        self.epoch = self.epoch.wrapping_add(1);
+        if let Some(tx) = &self.tx {
+            let _ = tx.try_send(Command::Stop);
+        }
+        self.state = AppState::Home;
+        self.deadline = None;
+    }
+
+    // ------------------------------------------------------------ Results
+
+    pub fn best(&self) -> Option<&TestResult> {
+        let max = max_download_speed(&self.results);
+        self.results.iter().max_by(|a, b| {
+            a.score(max)
+                .partial_cmp(&b.score(max))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+    }
+
+    pub fn max_speed(&self) -> Option<f64> {
+        max_download_speed(&self.results)
+    }
+
     pub fn cycle_sort_column(&mut self) {
         self.sort_column = match self.sort_column {
-            SortColumn::Ip => SortColumn::Latency,
-            SortColumn::Latency => SortColumn::DownloadSpeed,
-            SortColumn::DownloadSpeed => {
-                if self.mode == AppMode::Mirror {
-                    SortColumn::Name
-                } else {
-                    SortColumn::Ip
-                }
-            }
-            SortColumn::Name => SortColumn::Ip,
+            SortColumn::Score => SortColumn::Unlocked,
+            SortColumn::Unlocked => SortColumn::Latency,
+            SortColumn::Latency => SortColumn::Speed,
+            SortColumn::Speed => SortColumn::Candidate,
+            SortColumn::Candidate => SortColumn::Score,
         };
         self.sort_results();
     }
 
-    /// Toggle sort direction
     pub fn toggle_sort_direction(&mut self) {
         self.sort_ascending = !self.sort_ascending;
         self.sort_results();
     }
 
-
-
-    /// Reset to input state
-    pub fn reset(&mut self) {
-        self.state = AppState::Input;
-        self.results.clear();
-        self.mirror_results.clear();
-        self.last_result = None;
-        self.last_mirror_result = None;
-        self.best_result = None;
-        self.best_mirror_result = None;
-        self.testing_index = 0;
-        self.status_message = None;
+    fn sort_results(&mut self) {
+        let max = self.max_speed();
+        crate::engine::sort_results(
+            &mut self.results,
+            self.sort_column,
+            self.sort_ascending,
+            max,
+        );
+        self.table_offset = 0;
     }
 
-    /// Apply the fastest DNS to the system
-    pub fn apply_fastest_dns(&mut self) {
-        if let Some(best) = &self.best_result {
-            match crate::sys_dns::set_system_dns(best.ip) {
+    pub fn scroll_table(&mut self, delta: i32) {
+        let len = self.results.len();
+        if len == 0 {
+            return;
+        }
+        let cur = self.table_offset as i64 + delta as i64;
+        self.table_offset = cur.clamp(0, len as i64 - 1) as usize;
+    }
+
+    /// Apply the best result's IP to the system (see sys_dns docs).
+    pub fn apply_best(&mut self) {
+        if let Some(best) = self.best() {
+            match crate::sys_dns::set_system_dns(best.dns.ip) {
                 Ok(_) => {
-                    self.status_message = Some((format!("Successfully set system DNS to {}", best.ip), false));
+                    self.status_message =
+                        Some((format!("System DNS set to {}", best.dns.ip), false));
                 }
                 Err(e) => {
-                    self.status_message = Some((format!("Failed to set system DNS: {}", e), true));
+                    self.status_message = Some((format!("Failed to set system DNS: {e}"), true));
                 }
             }
         } else {
-            self.status_message = Some(("No valid test results available.".to_string(), true));
+            self.status_message = Some(("No valid results available.".into(), true));
         }
     }
 
-    /// Record a mirror test result
-    pub fn record_mirror_result(&mut self, result: MirrorTestResult) {
-        self.last_mirror_result = Some(result.clone());
-
-        // Update best mirror result (higher speed is better)
-        if let Some(best) = &self.best_mirror_result {
-            let is_better = match (result.speed_mbps, best.speed_mbps) {
-                (Some(s1), Some(s2)) => s1 > s2,
-                (Some(_), None) => true,
-                _ => false,
-            };
-            if is_better {
-                self.best_mirror_result = Some(result.clone());
-            }
-        } else if result.error.is_none() && result.speed_mbps.is_some() {
-            self.best_mirror_result = Some(result.clone());
-        }
-
-        self.mirror_results.push(result);
-        self.testing_index += 1;
-
-        if self.testing_index >= self.mirrors.len() {
-            self.finish_testing();
-        }
+    pub fn set_export_path(&mut self, path: String) {
+        self.export_path = Some(path);
     }
 
-
-    /// Toggle between DNS and Mirror mode
-    pub fn toggle_mode(&mut self) {
-        if self.state == AppState::Input {
-            self.mode = match self.mode {
-                AppMode::Dns => AppMode::Mirror,
-                AppMode::Mirror => AppMode::Dns,
-            };
-            self.reset();
-        }
-    }
-
-    /// Start testing
-    pub fn start_testing(&mut self) {
-        let targets = match self.mode {
-            AppMode::Dns => self.dns_servers.iter().map(|ip| TestTarget::Dns(*ip)).collect::<Vec<_>>(),
-            AppMode::Mirror => self.mirrors.iter().map(|m| TestTarget::Mirror(m.clone())).collect::<Vec<_>>(),
-        };
-
-        if !targets.is_empty() {
-            self.state = AppState::Testing;
-            self.testing_index = 0;
-            self.results.clear();
-            self.mirror_results.clear();
-            
-            // Send the first task
-            if let Some(tx) = &self.tx {
-                if let Some(target) = targets.get(0).cloned() {
-                    let _ = tx.try_send(target);
-                }
-            }
-        }
-    }
-
-    /// Process updates (check for results)
-    pub fn update(&mut self) {
-        if self.state != AppState::Testing {
+    pub fn export_results(&mut self) {
+        let Some(path) = self.export_path.clone() else {
+            self.status_message = Some((
+                "No export path set — pass --export <file> to enable".into(),
+                true,
+            ));
             return;
-        }
-
-        while let Ok(result) = self.rx.as_mut().unwrap().try_recv() {
-            match result {
-                TestResult::Dns(res) => self.record_result(res),
-                TestResult::Mirror(res) => self.record_mirror_result(res),
+        };
+        let is_csv = path.ends_with(".csv");
+        match crate::export::write_results(&self.results, &path, is_csv) {
+            Ok(n) => {
+                self.status_message = Some((format!("Exported {} results to {}", n, path), false))
             }
-
-            // Check if we reached the end
-            let total = match self.mode {
-                AppMode::Dns => self.dns_servers.len(),
-                AppMode::Mirror => self.mirrors.len(),
-            };
-
-            if self.testing_index < total {
-                // Send next task
-                if let Some(tx) = &self.tx {
-                    let target = match self.mode {
-                        AppMode::Dns => TestTarget::Dns(self.dns_servers[self.testing_index]),
-                        AppMode::Mirror => TestTarget::Mirror(self.mirrors[self.testing_index].clone()),
-                    };
-                    let _ = tx.try_send(target);
-                }
-            } else {
-                self.finish_testing();
-            }
+            Err(e) => self.status_message = Some((format!("Export failed: {e}"), true)),
         }
     }
 }

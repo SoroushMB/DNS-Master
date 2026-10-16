@@ -1,0 +1,228 @@
+{
+  "version": 2,
+  "updated": "2026-10",
+  "entries": [
+    {
+      "name": "Shecan",
+      "fa_name": "شکن",
+      "category": "antisanction",
+      "ips": ["178.22.122.100", "185.51.200.2"],
+      "doh": "https://free.shecan.ir/dns-query",
+      "tags": ["gemini", "youtube", "openai", "docker", "apple", "steam"],
+      "featured": true,
+      "notes": "Free tier. Documented support for Google AI/Gemini, Steam, Apple, Docker.",
+      "links": ["https://shecan.ir/"]
+    },
+    {
+      "name": "403.online",
+      "fa_name": "۴۰۳ آنلاین",
+      "category": "antisanction",
+      "ips": ["10.202.10.202", "10.202.10.102"],
+      "doh": "https://dns.403.online/dns-query",
+      "tags": ["gemini", "openai", "telegram", "psn", "xbox"],
+      "featured": true,
+      "notes": "Private-range addresses: works only on Iranian ISP connections. DoH/DoT supported.",
+      "links": ["https://403.online/"]
+    },
+    {
+      "name": "Radar Game",
+      "fa_name": "رادار گیم",
+      "category": "antisanction",
+      "ips": ["10.202.10.10", "10.202.10.11"],
+      "tags": ["xbox", "psn", "gaming"],
+      "featured": true,
+      "notes": "Gaming-focused (National Computer Games Foundation). Private-range: Iranian ISPs only.",
+      "links": ["https://radar.game/"]
+    },
+    {
+      "name": "Electro",
+      "fa_name": "الکترا",
+      "category": "antisanction",
+      "ips": ["78.157.42.100", "78.157.42.101"],
+      "tags": ["xbox", "psn", "gaming", "steam"],
+      "featured": true,
+      "notes": "Top pick for PSN/Xbox/launchers per community tests.",
+      "links": ["https://electro.team/"]
+    },
+    {
+      "name": "Electro (new)",
+      "fa_name": "الکترا (جدید)",
+      "category": "antisanction",
+      "ips": ["78.157.108.21", "78.157.108.22"],
+      "tags": ["xbox", "psn", "gaming", "stable-ping"],
+      "featured": true,
+      "notes": "Newer published address set for Electro (stable ping for EA/FC 26).",
+      "links": ["https://electro.team/"]
+    },
+    {
+      "name": "Begzar",
+      "fa_name": "بگذر",
+      "category": "antisanction",
+      "ips": ["185.55.226.26", "185.55.225.25"],
+      "tags": ["openai", "docker", "gemini"],
+      "featured": true,
+      "notes": "General anti-sanction DNS, good complement for launchers.",
+      "links": ["https://begzar.ir/"]
+    },
+    {
+      "name": "Pishgaman",
+      "fa_name": "پیشگامان",
+      "category": "antisanction",
+      "ips": ["5.202.100.100", "5.202.100.101"],
+      "tags": ["xbox", "gaming"],
+      "carrier_only": true,
+      "notes": "Console/community favorite. Only reachable from within Iranian networks.",
+      "links": ["https://pishgaman.ir/"]
+    },
+    {
+      "name": "Shatel",
+      "fa_name": "شاتل",
+      "category": "antisanction",
+      "ips": ["85.15.1.14", "85.15.1.15"],
+      "tags": [],
+      "notes": "Only recommended for Shatel ISP subscribers.",
+      "links": ["https://shatel.ir/"]
+    },
+    {
+      "name": "Vanilla",
+      "fa_name": "وانیلا",
+      "category": "gaming",
+      "ips": ["10.139.177.21", "10.139.177.22"],
+      "tags": ["gaming"],
+      "notes": "Gaming DNS. Private-range: Iranian ISPs only.",
+      "links": []
+    },
+    {
+      "name": "Google Public DNS",
+      "fa_name": "گوگل",
+      "category": "public",
+      "ips": ["8.8.8.8", "8.8.4.4"],
+      "doh": "https://dns.google/dns-query",
+      "tags": ["stability", "download"],
+      "featured": true,
+      "notes": "Baseline for stability and downloads; does NOT bypass sanctions.",
+      "links": ["https://developers.google.com/speed/public-dns"]
+    },
+    {
+      "name": "Cloudflare",
+      "fa_name": "کلودفلر",
+      "category": "public",
+      "ips": ["1.1.1.1", "1.0.0.1"],
+      "doh": "https://cloudflare-dns.com/dns-query",
+      "tags": ["privacy", "speed"],
+      "featured": true,
+      "notes": "Fastest anycast resolver; does NOT bypass sanctions.",
+      "links": ["https://1.1.1.1/"]
+    },
+    {
+      "name": "Cloudflare Families (malware)",
+      "fa_name": "کلودفلر خانواده",
+      "category": "families",
+      "ips": ["1.1.1.2", "1.0.0.2"],
+      "tags": ["security"],
+      "notes": "Blocks malware domains; use 1.1.1.3/1.0.0.3 for adult-content blocking too.",
+      "links": ["https://one.one.one.one/family/"]
+    },
+    {
+      "name": "Quad9",
+      "fa_name": "کواد9",
+      "category": "privacy",
+      "ips": ["9.9.9.9", "149.112.112.112"],
+      "doh": "https://dns.quad9.net/dns-query",
+      "tags": ["security", "privacy"],
+      "notes": "Swiss no-log policy, blocks malicious domains.",
+      "links": ["https://quad9.net/"]
+    },
+    {
+      "name": "OpenDNS (Cisco)",
+      "fa_name": "اوپن‌دی‌ان‌اس",
+      "category": "public",
+      "ips": ["208.67.222.222", "208.67.220.220"],
+      "tags": ["stability"],
+      "notes": "Long-standing stable resolver.",
+      "links": ["https://opendns.com/"]
+    },
+    {
+      "name": "Verisign",
+      "fa_name": "وری‌ساین",
+      "category": "public",
+      "ips": ["64.6.64.6", "64.6.65.6"],
+      "tags": ["stability"],
+      "notes": "Operates .com/.net root infrastructure.",
+      "links": []
+    },
+    {
+      "name": "AdGuard DNS",
+      "fa_name": "ادگارد",
+      "category": "privacy",
+      "ips": ["94.140.14.14", "94.140.15.15"],
+      "tags": ["adblock", "security"],
+      "notes": "Blocks ads and trackers at DNS level.",
+      "links": ["https://adguard-dns.io/"]
+    },
+    {
+      "name": "Control D",
+      "fa_name": "کنترل‌دی",
+      "category": "privacy",
+      "ips": ["76.76.2.0", "76.76.10.0"],
+      "doh": "https://freedns.controld.com/p0",
+      "tags": ["privacy"],
+      "notes": "Unfiltered 'p0' anycast endpoints.",
+      "links": ["https://controld.com/"]
+    },
+    {
+      "name": "Comodo Secure",
+      "fa_name": "کومودو",
+      "category": "privacy",
+      "ips": ["8.26.56.26", "8.20.247.20"],
+      "tags": ["security"],
+      "notes": "Security-filtered SECURE DNS by Comodo.",
+      "links": []
+    },
+    {
+      "name": "Neustar UltraDNS",
+      "fa_name": "نویستار",
+      "category": "public",
+      "ips": ["156.154.70.1", "156.154.71.1"],
+      "tags": ["gaming", "stability"],
+      "notes": "Sometimes recommended for lower packet loss.",
+      "links": []
+    },
+    {
+      "name": "Hurricane Electric",
+      "fa_name": "هوریکان",
+      "category": "public",
+      "ips": ["74.82.42.42"],
+      "tags": ["stability"],
+      "notes": "Single anycast IP from HE in Houston.",
+      "links": []
+    },
+    {
+      "name": "Yandex",
+      "fa_name": "یاندکس",
+      "category": "public",
+      "ips": ["77.88.8.8", "77.88.8.1"],
+      "tags": ["stability"],
+      "notes": "Geo-close alternative for some Iranian routes.",
+      "links": []
+    },
+    {
+      "name": "NTT",
+      "fa_name": "NTT",
+      "category": "public",
+      "ips": ["129.250.35.250", "129.250.35.251"],
+      "tags": ["gaming", "stability"],
+      "notes": "Suggested in Iranian gaming guides as a download/latency alternative.",
+      "links": []
+    },
+    {
+      "name": "CleanBrowsing (security)",
+      "fa_name": "کلین‌براوزینگ",
+      "category": "families",
+      "ips": ["185.228.168.9", "185.228.169.9"],
+      "tags": ["security"],
+      "notes": "Malware/adult content blocking profile.",
+      "links": ["https://cleanbrowsing.org/"]
+    }
+  ]
+}
