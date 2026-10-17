@@ -101,6 +101,20 @@ impl CatalogEntry {
             .filter_map(|t| Service::from_tag(t))
             .collect()
     }
+
+    /// `true` when the entry is a *content-filtering* profile that blocks adult
+    /// sites — Cloudflare Families (adult), CleanBrowsing family/adult, AdGuard
+    /// Family, OpenDNS FamilyShield and Yandex Family. These carry the
+    /// `adult-filter` catalog tag so the UI can label them unmistakably.
+    ///
+    /// Such resolvers **reduce** the number of sites you can reach (the opposite
+    /// of "open as many sites as possible"), so the Home screen flags them and
+    /// the details pane spells out the trade-off.
+    pub fn blocks_adult(&self) -> bool {
+        self.tags
+            .iter()
+            .any(|t| t.eq_ignore_ascii_case("adult-filter"))
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -154,6 +168,39 @@ mod tests {
             .find(|e| e.name.contains("Google"))
             .unwrap();
         assert!(!google.iran_only());
+    }
+
+    #[test]
+    fn flags_adult_filters() {
+        let cat = load_builtin().unwrap();
+        // Content-filtering profiles must be tagged ...
+        for name in [
+            "Cloudflare Families (adult)",
+            "CleanBrowsing (adult)",
+            "CleanBrowsing (family)",
+            "AdGuard Family",
+            "OpenDNS FamilyShield",
+            "Yandex Family",
+        ] {
+            let e = cat
+                .entries
+                .iter()
+                .find(|e| e.name == name)
+                .unwrap_or_else(|| panic!("missing entry {name}"));
+            assert!(
+                e.blocks_adult(),
+                "{name} should be flagged as an adult filter"
+            );
+        }
+        // ... and malware-only / plain resolvers must not be.
+        for name in [
+            "Google Public DNS",
+            "Cloudflare Families (malware)",
+            "CleanBrowsing (security)",
+        ] {
+            let e = cat.entries.iter().find(|e| e.name == name).unwrap();
+            assert!(!e.blocks_adult(), "{name} must NOT be an adult filter");
+        }
     }
 
     #[test]

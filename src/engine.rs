@@ -163,6 +163,19 @@ pub fn default_included(
         .collect()
 }
 
+/// Every built-in entry (optionally restricted to one category). Backs the
+/// `--all` flag and the Home screen's select-all key: "test all resolvers".
+pub fn all_included(
+    builtin: &[CatalogEntry],
+    category_filter: Option<Category>,
+) -> BTreeSet<String> {
+    builtin
+        .iter()
+        .filter(|e| category_filter.is_none_or(|c| e.category == c))
+        .map(|e| e.name.clone())
+        .collect()
+}
+
 /// Target list: explicit CLI/imported IPs first, then each included catalog
 /// entry as primary+secondary.
 pub fn build_targets(
@@ -433,5 +446,32 @@ mod tests {
         assert_eq!(targets.len(), 3);
         assert_eq!(targets[0].role, TargetRole::Custom);
         assert!(targets.iter().any(|t| t.role == TargetRole::Secondary));
+    }
+
+    #[test]
+    fn all_included_selects_whole_category() {
+        let entry = |name: &str, cat| CatalogEntry {
+            name: name.into(),
+            fa_name: String::new(),
+            category: cat,
+            ips: vec!["1.1.1.1".into()],
+            doh: String::new(),
+            tags: vec![],
+            featured: false,
+            carrier_only: false,
+            notes: String::new(),
+            links: vec![],
+        };
+        let builtin = vec![
+            entry("A", crate::catalog::Category::Public),
+            entry("B", crate::catalog::Category::Privacy),
+            entry("C", crate::catalog::Category::Privacy),
+        ];
+        // No filter: everything, including non-featured.
+        assert_eq!(all_included(&builtin, None).len(), 3);
+        // Category filter: only the privacy pair.
+        let picked = all_included(&builtin, Some(crate::catalog::Category::Privacy));
+        assert_eq!(picked.len(), 2);
+        assert!(picked.contains("B") && picked.contains("C") && !picked.contains("A"));
     }
 }

@@ -196,6 +196,9 @@ fn render_home(frame: &mut Frame, app: &App) {
             if e.iran_only() {
                 line.push(Span::styled(" ⚠️", Style::default().fg(Color::Yellow)));
             }
+            if e.blocks_adult() {
+                line.push(Span::styled(" ⛔", Style::default().fg(Color::Red)));
+            }
             let services = e.known_services();
             if !services.is_empty() {
                 line.push(Span::raw("  "));
@@ -214,7 +217,8 @@ fn render_home(frame: &mut Frame, app: &App) {
         .collect();
 
     let mut list_state_note = String::new();
-    list_state_note.push_str("Select [space] · Enter adds custom IP · Tab to benchmark selected");
+    list_state_note
+        .push_str("Select [space] · Enter adds custom IP · Tab to benchmark · ⚠️ domestic-only · ⛔ blocks adult");
 
     let list_title = if let Some(cat) = app.category_filter {
         format!("Catalog — filter: {}", cat.label())
@@ -302,6 +306,13 @@ fn render_home(frame: &mut Frame, app: &App) {
                 }
                 lines1.push(Line::from(mid));
 
+                if e.blocks_adult() {
+                    lines1.push(Line::from(Span::styled(
+                        "⛔ Content filter: blocks adult sites — reduces how many sites resolve",
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    )));
+                }
+
                 if !e.notes.is_empty() {
                     lines1.push(Line::from(Span::styled(
                         e.notes.clone(),
@@ -374,7 +385,7 @@ fn render_home(frame: &mut Frame, app: &App) {
     frame.render_widget(Paragraph::new(Line::from(err_line)), chunks[4]);
 
     let help = Paragraph::new(
-        "⌨️  q/Esc quit · Tab start test · ↑/↓ move · Space include/exclude · Enter add IP",
+        "⌨️  q/Esc quit · Tab start test · ↑/↓ move · Space include/exclude · a all · Enter add IP",
     )
     .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(help, chunks[5]);

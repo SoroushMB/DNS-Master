@@ -79,6 +79,10 @@ struct Cli {
     #[arg(long)]
     only_dns: bool,
 
+    /// Include every catalog entry, not just the featured defaults (combine with --category)
+    #[arg(long)]
+    all: bool,
+
     /// Typos hidden shots helper: prints the checked services and exits
     #[arg(long, hide = true)]
     show_services: bool,
@@ -192,10 +196,14 @@ fn headless_run(
     category_filter: Option<catalog::Category>,
     services: Vec<Service>,
 ) -> Result<()> {
-    // --only-dns: test exactly the custom -d IPs (deduped). An empty inclusion
-    // set makes build_targets skip every catalog entry, so only custom IPs remain.
+    // --only-dns: test exactly the custom -d IPs (deduped). --all: every built-in
+    // entry for the selected category. Otherwise the featured defaults.
+    // An empty inclusion set makes build_targets skip every catalog entry, so
+    // only custom IPs remain.
     let included = if cli.only_dns {
         BTreeSet::new()
+    } else if cli.all {
+        engine::all_included(builtin, category_filter)
     } else {
         engine::default_included(builtin, category_filter)
     };
@@ -414,7 +422,9 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
             }
             KeyCode::Tab => app.start_testing(),
             KeyCode::Char(' ') => app.toggle_include(),
-            // Plain `q` quits; `q` with a modifier is treated as typing.
+            // `a` selects/clears every visible entry; plain `q` quits; `q` with a
+            // modifier is treated as typing.
+            KeyCode::Char('a') if key.modifiers.is_empty() => app.toggle_all_visible(),
             KeyCode::Char('q') if key.modifiers.is_empty() => app.should_quit = true,
             _ => {
                 app.input.handle_event(&Event::Key(key));
