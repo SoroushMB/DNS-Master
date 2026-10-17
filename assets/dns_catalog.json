@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "updated": "2026-10",
   "entries": [
     {
@@ -10,7 +10,7 @@
       "doh": "https://free.shecan.ir/dns-query",
       "tags": ["gemini", "youtube", "openai", "docker", "apple", "steam"],
       "featured": true,
-      "notes": "Free tier. Documented support for Google AI/Gemini, Steam, Apple, Docker.",
+      "notes": "Free tier (documented support for Google AI/Gemini, Steam, Apple, Docker). Official notice: the free tier is currently restricted and only usable with international access; the paid 'Shecan Pro' addresses are listed separately.",
       "links": ["https://shecan.ir/"]
     },
     {
@@ -58,7 +58,7 @@
       "name": "Begzar",
       "fa_name": "بگذر",
       "category": "antisanction",
-      "ips": ["185.55.226.26", "185.55.225.25"],
+      "ips": ["185.55.226.26", "185.55.225.25", "185.55.224.24"],
       "tags": ["openai", "docker", "gemini"],
       "featured": true,
       "notes": "General anti-sanction DNS, good complement for launchers.",
@@ -82,6 +82,51 @@
       "tags": [],
       "notes": "Only recommended for Shatel ISP subscribers.",
       "links": ["https://shatel.ir/"]
+    },
+    {
+      "name": "Zeus",
+      "fa_name": "زئوس",
+      "category": "antisanction",
+      "ips": ["37.32.5.60", "37.32.5.61"],
+      "tags": ["gaming", "xbox", "psn", "spotify", "youtube", "openai"],
+      "notes": "Popular Iranian gaming/anti-sanction DNS; also advertised for Spotify, YouTube and OpenAI. Free.",
+      "links": ["https://zeusdns.ir/"]
+    },
+    {
+      "name": "Shelter",
+      "fa_name": "شلتر",
+      "category": "gaming",
+      "ips": ["94.103.125.157", "94.103.125.158"],
+      "tags": ["gaming", "xbox", "psn", "steam"],
+      "notes": "Gaming anti-sanction DNS. Paid per-IP VIP plans; the shared public pair rotates, so treat these as best-effort.",
+      "links": ["https://www.sheltertm.com/"]
+    },
+    {
+      "name": "Hostiran",
+      "fa_name": "هاست‌ایران",
+      "category": "antisanction",
+      "ips": ["172.29.0.100", "172.29.2.100"],
+      "tags": ["openai", "docker", "github", "apple"],
+      "notes": "Private-range addresses (172.16/12): reachable only from Iranian ISP connections. Vendor anti-sanction service.",
+      "links": ["https://hostiran.net/landing/proxy"]
+    },
+    {
+      "name": "Server.ir",
+      "fa_name": "سرور.آی‌آر",
+      "category": "antisanction",
+      "ips": ["194.104.158.48", "194.104.158.78"],
+      "tags": ["apple", "github", "psn", "gaming"],
+      "notes": "Free anti-sanction DNS (Apple, GitHub, PSN and more). The official site issues addresses by signup; these are the widely published pair.",
+      "links": ["https://server.ir/dns-proxy/"]
+    },
+    {
+      "name": "Shecan Pro",
+      "fa_name": "شکن حرفه‌ای",
+      "category": "antisanction",
+      "ips": ["178.22.122.101", "185.51.200.1"],
+      "tags": ["gemini", "youtube", "openai", "docker", "apple", "steam", "gaming"],
+      "notes": "Paid Shecan tier (activated for your registered IP). The free tier is 178.22.122.100 / 185.51.200.2.",
+      "links": ["https://shecan.ir/"]
     },
     {
       "name": "Vanilla",
@@ -214,6 +259,90 @@
       "tags": ["gaming", "stability"],
       "notes": "Suggested in Iranian gaming guides as a download/latency alternative.",
       "links": []
+    },
+    {
+      "name": "DNS.SB",
+      "fa_name": "دی‌ان‌اس.اس‌بی",
+      "category": "privacy",
+      "ips": ["185.222.222.222", "45.11.45.11"],
+      "doh": "https://doh.sb/dns-query",
+      "tags": ["privacy", "security"],
+      "notes": "No-log resolver, DNSSEC enabled. DoT: dot.sb.",
+      "links": ["https://dns.sb/"]
+    },
+    {
+      "name": "DNS.WATCH",
+      "fa_name": "دی‌ان‌اس واچ",
+      "category": "privacy",
+      "ips": ["84.200.69.80", "84.200.70.40"],
+      "tags": ["privacy"],
+      "notes": "Uncensored no-log resolver, online since 2014, DNSSEC enabled.",
+      "links": ["https://dns.watch/"]
+    },
+    {
+      "name": "DNS4EU (unfiltered)",
+      "fa_name": "دی‌ان‌اس اروپا",
+      "category": "public",
+      "ips": ["86.54.11.100", "86.54.11.200"],
+      "doh": "https://unfiltered.joindns4.eu/dns-query",
+      "tags": ["privacy", "speed"],
+      "notes": "EU-run public resolver (Whalebone) with no content filtering, under EU/GDPR rules.",
+      "links": ["https://joindns4.eu/for-public"]
+    },
+    {
+      "name": "NextDNS",
+      "fa_name": "نکست‌دی‌ان‌اس",
+      "category": "privacy",
+      "ips": ["45.90.28.0", "45.90.30.0"],
+      "tags": ["privacy", "adblock"],
+      "notes": "Anycast resolver: applies your NextDNS profile when configured, otherwise plain unfiltered resolution.",
+      "links": ["https://nextdns.io/"]
+    },
+    {
+      "name": "SafeDNS",
+      "fa_name": "سیف‌دی‌ان‌اس",
+      "category": "public",
+      "ips": ["195.46.39.39", "195.46.39.40"],
+      "tags": ["stability"],
+      "notes": "Long-running public resolver with optional content filtering.",
+      "links": ["https://www.safedns.com/"]
+    },
+    {
+      "name": "CZ.NIC ODVR",
+      "fa_name": "چک‌نیک",
+      "category": "public",
+      "ips": ["193.17.47.1", "185.43.135.1"],
+      "doh": "https://odvr.nic.cz/doh",
+      "tags": ["privacy", "security"],
+      "notes": "Run by CZ.NIC (the .cz registry): no logging, DNSSEC validation, Prague.",
+      "links": ["https://www.nic.cz/odvr/"]
+    },
+    {
+      "name": "AdGuard Family",
+      "fa_name": "ادگارد خانواده",
+      "category": "families",
+      "ips": ["94.140.14.15", "94.140.15.16"],
+      "tags": ["adblock", "security"],
+      "notes": "AdGuard family-protection profile: ads, trackers and adult content.",
+      "links": ["https://adguard-dns.io/"]
+    },
+    {
+      "name": "CleanBrowsing (family)",
+      "fa_name": "کلین‌براوزینگ خانواده",
+      "category": "families",
+      "ips": ["185.228.168.168", "185.228.169.168"],
+      "tags": ["security"],
+      "notes": "CleanBrowsing family filter (blocks adult content).",
+      "links": ["https://cleanbrowsing.org/"]
+    },
+    {
+      "name": "OpenDNS FamilyShield",
+      "fa_name": "اوپن‌دی‌ان‌اس خانواده",
+      "category": "families",
+      "ips": ["208.67.222.123", "208.67.220.123"],
+      "tags": ["security"],
+      "notes": "OpenDNS profile that blocks adult content out of the box.",
+      "links": ["https://www.opendns.com/setupguide/"]
     },
     {
       "name": "CleanBrowsing (security)",
