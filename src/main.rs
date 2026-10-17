@@ -354,7 +354,10 @@ async fn run_app(
                 && key.kind == KeyEventKind::Press
             {
                 match key.code {
-                    KeyCode::Char('q') => app.should_quit = true,
+                    KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.should_quit = true;
+                    }
                     KeyCode::Char('r') => app.reset_to_home(),
                     _ => {}
                 }
@@ -382,6 +385,21 @@ async fn run_app(
 }
 
 fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
+    // Global keys, valid on every screen: Esc and Ctrl+C always leave the app.
+    // Handled before the per-screen match so the user can never be stuck on the
+    // results/testing screen waiting for a key that screen does not know.
+    match key.code {
+        KeyCode::Esc => {
+            app.should_quit = true;
+            return;
+        }
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.should_quit = true;
+            return;
+        }
+        _ => {}
+    }
+
     match app.state {
         AppState::Home => match key.code {
             KeyCode::Up => app.move_cursor_up(),
@@ -396,16 +414,8 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
             }
             KeyCode::Tab => app.start_testing(),
             KeyCode::Char(' ') => app.toggle_include(),
-            KeyCode::Char('q') => {
-                if key.modifiers.is_empty() {
-                    app.should_quit = true;
-                } else {
-                    app.input.handle_event(&Event::Key(key));
-                }
-            }
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                app.should_quit = true;
-            }
+            // Plain `q` quits; `q` with a modifier is treated as typing.
+            KeyCode::Char('q') if key.modifiers.is_empty() => app.should_quit = true,
             _ => {
                 app.input.handle_event(&Event::Key(key));
             }
@@ -425,5 +435,73 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
             _ => {}
         },
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    /// An app parked on the given screen (no targets, no probes needed).
+    fn app_on(state: AppState) -> App {
+        let mut app = App::new(
+            Vec::new(),
+            Vec::new(),
+            2,
+            "test".to_string(),
+            None,
+            2,
+            Vec::new(),
+        );
+        app.state = state;
+        app
+    }
+
+    /// Regression: the app must be leavable from every screen. Esc used to do
+    /// nothing at all, and Ctrl+C only worked on the Home screen, so after a
+    /// test finished the user could not quit.
+    #[test]
+    fn esc_quits_from_every_screen() {
+        for state in [AppState::Home, AppState::Testing, AppState::Results] {
+            let mut app = app_on(state);
+            handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+            assert!(app.should_quit, "Esc must quit from {state:?}");
+        }
+    }
+
+    #[test]
+    fn ctrl_c_quits_from_every_screen() {
+        for state in [AppState::Home, AppState::Testing, AppState::Results] {
+            let mut app = app_on(state);
+            handle_key(
+                &mut app,
+                KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            );
+            assert!(app.should_quit, "Ctrl+C must quit from {state:?}");
+        }
+    }
+
+    #[test]
+    fn q_quits_from_results() {
+        let mut app = app_on(AppState::Results);
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE),
+        );
+        assert!(app.should_quit);
+    }
+
+    /// The Results screen's own keys must still work alongside the global ones.
+    #[test]
+    fn results_keys_still_work() {
+        let mut app = app_on(AppState::Results);
+        app.results = Vec::new();
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE),
+        );
+        assert_eq!(app.state, AppState::Home);
+        assert!(!app.should_quit);
     }
 }

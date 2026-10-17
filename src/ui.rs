@@ -67,6 +67,21 @@ fn service_chip_style(status: Option<&ProbeStatus>) -> Style {
     }
 }
 
+/// Pad `s` to `w` columns (space-filled), truncating with `…` when it is longer.
+/// Char-based so it never panics on non-ASCII names.
+fn pad_truncate(s: &str, w: usize) -> String {
+    let n = s.chars().count();
+    if n <= w {
+        format!("{s:<w$}")
+    } else if w == 0 {
+        String::new()
+    } else {
+        let mut out: String = s.chars().take(w - 1).collect();
+        out.push('…');
+        out
+    }
+}
+
 fn fmt_ms(d: Option<std::time::Duration>) -> String {
     d.map(|t| format!("{:.0}ms", t.as_secs_f64() * 1000.0))
         .unwrap_or_else(|| "-".into())
@@ -85,7 +100,7 @@ fn render_home(frame: &mut Frame, app: &App) {
         .constraints([
             Constraint::Length(3), // Title + stats
             Constraint::Min(6),    // Catalog list
-            Constraint::Length(4), // Details of cursor entry
+            Constraint::Length(6), // Details of cursor entry
             Constraint::Length(3), // Custom input
             Constraint::Length(1), // Errors
             Constraint::Length(1), // Help
@@ -134,6 +149,17 @@ fn render_home(frame: &mut Frame, app: &App) {
         .filter(|(_, e)| app.category_filter.is_none_or(|c| e.category == c));
     let max_name: usize = app.builtin.iter().map(|e| e.name.len()).max().unwrap_or(10);
 
+    // Keep the addresses visible on any terminal: the name column is sized from
+    // the list width, the IPs sit immediately to the right of each name, and the
+    // decorative chips (⚠️/service glyphs/🔒) are the only thing allowed to clip.
+    let avail = chunks[1].width.saturating_sub(2) as usize; // inside the borders
+    let ips_w = 15 + 1 + 15; // two right-aligned IPv4 columns + separator
+    let trailing_w = 8; // slack for ⚠️ + service glyphs + 🔒
+    let prefix_w = 2 + 4 + 2; // cursor arrow + checkbox + gap before the IPs
+    let name_w = avail
+        .saturating_sub(prefix_w + ips_w + trailing_w)
+        .clamp(10, max_name);
+
     let items: Vec<ListItem> = visible
         .map(|(i, e)| {
             let checked = if app.included.contains(&e.name) {
@@ -153,20 +179,16 @@ fn render_home(frame: &mut Frame, app: &App) {
                     }),
                 ),
                 Span::styled(
-                    format!("{:<w$}", e.name, w = max_name),
+                    format!("{}  ", pad_truncate(&e.name, name_w)),
                     Style::default()
                         .fg(Color::White)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!(" {:<16}", e.category.label()),
-                    Style::default().fg(category_color(&e.category)),
-                ),
-                Span::styled(
                     format!(
-                        " {:>15} {:>15}",
-                        e.ips.first().cloned().unwrap_or_default(),
-                        e.ips.get(1).cloned().unwrap_or_default()
+                        "{:>15} {:>15}",
+                        e.ips.first().map(|ip| ip.to_string()).unwrap_or_default(),
+                        e.ips.get(1).map(|ip| ip.to_string()).unwrap_or_default()
                     ),
                     Style::default().fg(Color::DarkGray),
                 ),
@@ -250,6 +272,10 @@ fn render_home(frame: &mut Frame, app: &App) {
                 lines1.push(Line::from(head));
 
                 let mut mid: Vec<Span> = Vec::new();
+                mid.push(Span::styled(
+                    format!("🏷 {}  ", e.category.label()),
+                    Style::default().fg(category_color(&e.category)),
+                ));
                 if !e.doh.is_empty() {
                     mid.push(Span::styled(
                         "🔒 DoH ",
@@ -348,7 +374,7 @@ fn render_home(frame: &mut Frame, app: &App) {
     frame.render_widget(Paragraph::new(Line::from(err_line)), chunks[4]);
 
     let help = Paragraph::new(
-        "⌨️  ↑/↓ cursor · Space include/exclude · Enter add IP · Backspace remove custom · Tab start test · q quit",
+        "⌨️  q/Esc quit · Tab start test · ↑/↓ move · Space include/exclude · Enter add IP",
     )
     .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(help, chunks[5]);
@@ -373,7 +399,7 @@ fn render_testing(frame: &mut Frame, app: &App) {
     let total = app.targets.len();
     let done = app.results.len();
     let title = Paragraph::new(format!(
-        "{} Testing {} targets with {} lanes — {}/{} done (press r to cancel, q to quit)",
+        "{} Testing {} targets with {} lanes — {}/{} done (press r to cancel · q/Esc quit)",
         spinner(app.tick_count),
         total,
         app.lanes,
@@ -533,7 +559,8 @@ fn render_testing(frame: &mut Frame, app: &App) {
         );
     frame.render_widget(chart, chunks[4]);
 
-    let help = Paragraph::new("⌨️  r cancel · q quit").style(Style::default().fg(Color::DarkGray));
+    let help =
+        Paragraph::new("⌨️  q/Esc quit · r cancel").style(Style::default().fg(Color::DarkGray));
     frame.render_widget(help, chunks[5]);
 }
 
@@ -644,6 +671,10 @@ pub fn render_results(frame: &mut Frame, app: &mut App) {
     };
 
     let mut header_cells = vec![
+        Cell::from("#").style(Style::default().fg(Color::DarkGray)),
+        Cell::from(format!("Candidate{}", arrow(SortColumn::Candidate, app)))
+            .style(Style::default().fg(Color::Cyan)),
+        Cell::from("IP").style(Style::default().fg(Color::Cyan)),
         Cell::from(format!("Ping{}", arrow(SortColumn::Latency, app)))
             .style(Style::default().fg(Color::Cyan)),
         Cell::from(format!("Mbps{}", arrow(SortColumn::Speed, app)))
@@ -674,8 +705,10 @@ pub fn render_results(frame: &mut Frame, app: &mut App) {
 
     let mut rows: Vec<Row> = Vec::new();
     let max_speed = crate::engine::max_download_speed(&app.results);
-    for res in &app.results {
-        // Candidate cell.
+    for (idx, res) in app.results.iter().enumerate() {
+        // Rank (position in the current sort order) + candidate name/role tag.
+        let rank_cell =
+            Cell::from((idx + 1).to_string()).style(Style::default().fg(Color::DarkGray));
         let role_tag = match res.meta.role {
             TargetRole::Primary => "P",
             TargetRole::Secondary => "S",
@@ -683,7 +716,7 @@ pub fn render_results(frame: &mut Frame, app: &mut App) {
         };
         let cand_cell = Cell::from(Line::from(vec![
             Span::styled(
-                res.meta.label(),
+                pad_truncate(&res.meta.label(), 14),
                 Style::default()
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
@@ -693,6 +726,8 @@ pub fn render_results(frame: &mut Frame, app: &mut App) {
                 Style::default().fg(Color::DarkGray),
             ),
         ]));
+        // The resolver IP being tested, right next to its name.
+        let ip_cell = Cell::from(res.dns.ip.to_string()).style(Style::default().fg(Color::Cyan));
 
         // Service badge cells (one column per tracked service).
         let mut svc_cells: Vec<Cell> = Vec::new();
@@ -731,7 +766,9 @@ pub fn render_results(frame: &mut Frame, app: &mut App) {
         };
 
         let mut cells = vec![
+            rank_cell,
             cand_cell,
+            ip_cell,
             Cell::from(fmt_ms(res.dns.latency)),
             Cell::from(fmt_speed(res.dns.download_speed_mbps)),
         ];
@@ -741,16 +778,21 @@ pub fn render_results(frame: &mut Frame, app: &mut App) {
         rows.push(Row::new(cells));
     }
 
+    // Column widths: rank + candidate + IP + Ping + Mbps + one cell per service
+    // + OK + Score. With 7 services this totals 76 columns, which fits the table
+    // body of a standard 80-column terminal (80 − 2 margins − 2 borders).
     let mut widths: Vec<Constraint> = vec![
-        Constraint::Length(22),
-        Constraint::Length(10),
-        Constraint::Length(9),
+        Constraint::Length(3),  // #
+        Constraint::Length(18), // Candidate [role]
+        Constraint::Length(16), // IP
+        Constraint::Length(7),  // Ping
+        Constraint::Length(8),  // Mbps
     ];
     for _ in &app.services {
         widths.push(Constraint::Length(2));
     }
-    widths.push(Constraint::Length(6));
-    widths.push(Constraint::Length(9));
+    widths.push(Constraint::Length(4)); // OK
+    widths.push(Constraint::Length(6)); // Score
 
     // Rows actually visible in the table body: the table chunk height minus its
     // two border lines and the one header row. Stored so that scrolling clamps
@@ -804,7 +846,7 @@ pub fn render_results(frame: &mut Frame, app: &mut App) {
             };
             (
                 format!(
-                    "⌨️  s sort | d direction | ↑/↓ scroll | a apply best to system{} | r re-run | h home | q quit",
+                    "⌨️  q/Esc quit | s sort | d direction | ↑/↓ scroll | a apply | r re-run | h home{}",
                     export_keys
                 ),
                 Style::default().fg(Color::DarkGray),

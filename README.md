@@ -48,14 +48,17 @@ Prereqs: Rust 1.88+, internet.
 
 | Screen | Keys |
 |--------|------|
-| **Home** | `↑/↓` move · `space` include/exclude catalog entry · type IP + `Enter` add custom · `Backspace` remove custom · **`Tab` start test** · `q` quit |
-| **Testing** | `r` cancel & go home · `q` quit |
-| **Results** | `s` cycle sort column · `d` toggle direction · `↑/↓` scroll · **`a` apply best to system** · `e` export · `r` re-run · `h` home · `q` quit |
+| **Any** | **`q` / `Esc` / `Ctrl+C` quit** (works on every screen) |
+| **Home** | `↑/↓` move · `space` include/exclude catalog entry · type IP + `Enter` add custom · `Backspace` remove custom · **`Tab` start test** |
+| **Testing** | `r` cancel & go home |
+| **Results** | `s` cycle sort column · `d` toggle direction · `↑/↓` scroll · **`a` apply best to system** · `e` export · `r` re-run · `h` home |
 
-The Home screen lists the built-in catalog with category chips, service tags
-(`G Gemini · A Antigravity · Y YouTube · T Telegram · H GitHub · X X · S
-Spotify`), a ⚠️ marker for domestic-only (private/carrier range) resolvers and
-a 🔒 marker when the provider offers DoH.
+The Home screen lists the built-in catalog with each server's **IPv4 addresses
+right next to its name** (primary + secondary), a ⚠️ marker for domestic-only
+(private/carrier range) resolvers and a 🔒 marker when the provider offers DoH;
+the details pane below shows the Persian name, category, DoH endpoint, known
+services, notes and links. The Results table has a `# / Candidate / IP / Ping /
+Mbps / <services> / OK / Score` layout that fits a standard 80-column terminal.
 
 > [!IMPORTANT]
 > Applying system DNS (`a`, or `--apply`): Linux uses `nmcli`/`resolvectl`,
