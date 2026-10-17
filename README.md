@@ -13,11 +13,11 @@ and Spotify. No marketing claims, just live measurements on *your* network.
 
 ## ✨ What's new in v2
 
-- 📦 **Embedded DNS catalog** — 37 curated servers: Iranian anti-sanction
+- 📦 **Embedded DNS catalog** — 40 curated servers: Iranian anti-sanction
   resolvers (Shecan free + Pro, 403, Radar Game, Electro ×2, Begzar, Zeus,
   Shelter, Hostiran, Server.ir, Pishgaman, Shatel, Vanilla) plus public /
   privacy / family resolvers (Google, Cloudflare, Quad9, AdGuard ×2, OpenDNS
-  ×2, NextDNS, DNS.SB, DNS.WATCH, DNS4EU, SafeDNS, CZ.NIC, CleanBrowsing ×2 …)
+  ×2, NextDNS, DNS.SB, DNS.WATCH, DNS4EU, SafeDNS, CZ.NIC, CleanBrowsing ×3 …)
   baked into the binary. Works offline, extendable via CSV/JSON.
 - 🎯 **Service Access Probes** — for every resolver the tool resolves each
   service through *that* DNS, connects with the proper SNI and classifies:

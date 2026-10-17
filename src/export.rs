@@ -124,7 +124,7 @@ mod tests {
         let cpath = dir.join("out.csv");
 
         assert_eq!(
-            write_json(&[r.clone()], jpath.to_str().unwrap()).unwrap(),
+            write_json(std::slice::from_ref(&r), jpath.to_str().unwrap()).unwrap(),
             1
         );
         assert_eq!(write_csv(&[r], cpath.to_str().unwrap()).unwrap(), 1);
